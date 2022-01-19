@@ -37,8 +37,9 @@ void flist(int, int, int);
 void clearprog(void);
 void execute_one_command(char *p);
 
-
-
+#ifdef LISTFILE
+void ListNewLine(int *ListCnt, int all);
+#endif
 // stack to keep track of nested FOR/NEXT loops
 struct s_forstack forstack[MAXFORLOOPS + 1];
 int forindex;
@@ -276,6 +277,34 @@ void sortStrings(char **arr, int n)
         }
     }
 }
+#ifdef LISTFILE
+// List a file from SDCARD
+void ListFile(char *pp,int all) {
+	char buff[STRINGSIZE];
+    int fnbr;
+    //char *p;//, *buf;
+    int i,ListCnt = 1;
+    //int c;
+
+    if(!InitSDCard()) return ;
+    fnbr = FindFreeFileNbr();
+    //p = getCstring(fname);
+    //if(strchr(p, '.') == NULL) strcat(p, ".BAS");
+    if(BasicFileOpen(pp, fnbr, FA_READ)){// return false;
+    while(!FileEOF(fnbr)) {                                     // while waiting for the end of file
+        memset(buff,0,256);
+       	MMgetline(fnbr, (char *)buff);									    // get the input line
+       	for(i=0;i<strlen(buff);i++)if(buff[i] == TAB) buff[i] = ' ';
+       	MMPrintString(buff);
+       	ListCnt+=strlen(buff)/Option.Width;
+        ListNewLine(&ListCnt, all);
+   	}
+
+    FileClose(fnbr);
+    } else error("File not found");
+
+}
+#endif
 
 void MIPS16 cmd_list(void) {
 	char *p;
@@ -311,12 +340,16 @@ void MIPS16 cmd_list(void) {
     } else if((p = checkstring(cmdline, "FUNCTIONS"))) {
     	m=0;
     	step=(Option.DISPLAY_CONSOLE ? HRes/gui_font_width/16 : 5);
-		char** c=GetTempMemory((TokenTableSize)*sizeof(*c)+(TokenTableSize)*16);
-		for(i=0;i<TokenTableSize;i++){
-				c[m]= (char *)((int)c + sizeof(char *) * TokenTableSize + m*16);
-				strcpy(c[m],tokentbl[i].name);
+		char** c=GetTempMemory((TokenTableSize+3)*sizeof(*c)+(TokenTableSize+3)*16);
+		for(i=0;i<TokenTableSize+3;i++){
+				c[m]= (char *)((int)c + sizeof(char *) * (TokenTableSize+3) + m*16);
+				if(m<TokenTableSize)strcpy(c[m],tokentbl[i].name);
+				else if(m==TokenTableSize)strcpy(c[m],"=>");
+				else if(m==TokenTableSize+1)strcpy(c[m],"=<");
+				else strcpy(c[m],"MM.Info$(");
 				m++;
 		}
+		sortStrings(c,m);
     	for(i=1;i<m;i+=step){
     		for(k=0;k<step;k++){
         		if(i+k<m){
@@ -328,8 +361,20 @@ void MIPS16 cmd_list(void) {
     	}
 		MMPrintString("Total of ");PInt(m-1);MMPrintString(" functions and operators\r\n");
     } else {
-        ListProgram(ProgMemory, false);
-        checkend(cmdline);
+#ifdef LISTFILE
+    	if(!(*cmdline == 0 || *cmdline == '\'')) {
+    	        	getargs(&cmdline,1,",");
+    	        	char *buff=GetTempMemory(STRINGSIZE);
+    	        	strcpy(buff,getCstring(argv[0]));
+    	    		if(strchr(buff, '.') == NULL) strcat(buff, ".BAS");
+    				ListFile(buff, false);
+    	} else {
+#endif
+    				ListProgram(ProgMemory, false);
+    				checkend(cmdline);
+#ifdef LISTFILE
+    	}
+#endif
     }
 }
 
@@ -377,7 +422,7 @@ void MIPS16 cmd_run(void) {
     WatchdogSet = false;
 	PrepareProgram(true);
     IgnorePIN = false;
-//    if(PROG_FLASH_SIZE != PROG_FLASH_SIZE) ExecuteProgram(ProgMemory + PROG_FLASH_SIZE);       // run anything that might be in the library
+    if(Option.ProgFlashSize != PROG_FLASH_SIZE) ExecuteProgram(ProgMemory + Option.ProgFlashSize);       // run anything that might be in the library
     if(*ProgMemory != T_NEWLINE) return;                             // no program to run
 	nextstmt = ProgMemory;
 }
@@ -409,6 +454,7 @@ void MIPS16 cmd_new(void) {
 	checkend(cmdline);
     ClearSavedVars();                                               // clear any saved variables
     FlashWriteInit(PROGRAM_FLASH);                     // erase program memory
+    AppendLibrary(false);
 	ClearProgram();
     WatchdogSet = false;
     Option.Autorun = false;
@@ -430,6 +476,7 @@ void cmd_goto(void) {
 	else
 		nextstmt = findline(getinteger(cmdline), true);				// try for a line number
     IgnorePIN = false;
+    CurrentLinePtr = nextstmt;           //fix for error line no
 }
 
 
@@ -1209,7 +1256,7 @@ void cmd_exit(void) {
 
 void cmd_error(void) {
 	char *s;
-	if(*cmdline && *cmdline != '\'') {
+	if(*cmdline && *cmdline != '\'') {                               //not a comment
 		s = getCstring(cmdline);
     	CurrentLinePtr = NULL;                                      // suppress printing the line that caused the issue
 		error(s);
@@ -1259,6 +1306,7 @@ void cmd_gosub(void) {
 	else
 		nextstmt = findline(getinteger(cmdline), true);				// try for a line number
     IgnorePIN = false;
+    CurrentLinePtr = nextstmt;           //fix for error line no
 }
 
 
@@ -1526,12 +1574,41 @@ search_again:
 }
 
 
+#ifdef CMD_CALL
+void cmd_call(void){
+	int i;
+	 char *q;
+	 char *p=getCstring(cmdline); //get the command we want to call
+/*	q=p;
+	while(*q){ //convert to upper case for the match
+		*q=mytoupper(*q);
+		q++;
+	}*/
+	q=cmdline;
+	while(*q){
+		if(*q==',' || *q=='\'')break;
+		q++;
+	}
+	if(*q==',')q++;
+	i = FindSubFun(p, false);                   // it could be a defined command
+	strcat(p," ");
+	strcat(p,q);
+//	MMPrintString(p);PRet();
+	if(i >= 0) {                                // >= 0 means it is a user defined command
+		DefinedSubFun(false, p, i, NULL, NULL, NULL, NULL);
+	}
+	else
+		error("Unknown user subroutine");
+}
 
-
+#endif
 
 void cmd_restore(void) {
 	if(*cmdline == 0 || *cmdline == '\'') {
-        NextDataLine = ProgMemory;
+		if(CurrentLinePtr >= ProgMemory + Option.ProgFlashSize)
+		    NextDataLine = ProgMemory + Option.ProgFlashSize;
+		else
+		    NextDataLine = ProgMemory;
 		NextData = 0;
 	} else {
 		skipspace(cmdline);

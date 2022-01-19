@@ -5,7 +5,7 @@ commands.c
 
 Handles all the commands in MMBasic
 
-Copyright 2011 - 2019 Geoff Graham.  All Rights Reserved.
+Copyright 2011 - 2020 Geoff Graham.  All Rights Reserved.
 
 This file and modified versions of this file are supplied to specific individuals or organisations under the following
 provisions:
@@ -351,9 +351,6 @@ void MIPS16 ListProgram(char *p, int all) {
 	char *pp;
     int ListCnt = 1;
 
-#if defined(__386__)
-	GetConsoleSize();												// this allows the user to change screen size anytime
-#endif
 
 	while(!(*p == 0 || *p == 0xff)) {                               // normally a LIST ends at the break so this is a safety precaution
         if(*p == T_NEWLINE) {
@@ -1307,7 +1304,7 @@ void cmd_endfun(void) {
 }
 
 
-
+/*
 void cmd_read(void) {
 	int i, len, dnbr, nbrvalues;
 	char *p, datatoken, *lineptr = NULL, *x;
@@ -1405,6 +1402,127 @@ search_again:
 			if(vidx < vcnt && i >= argc) goto search_again;			// need more data?  go back and look for more
 		}
 	}
+}*/
+
+void cmd_read(void) {
+    int i, j, k, len, card;
+    char *p, datatoken, *lineptr = NULL, *ptr;
+    int vcnt, vidx, num_to_read=0;
+    getargs(&cmdline, (MAX_ARG_COUNT * 2) - 1, ",");                // getargs macro must be the first executable stmt in a block
+
+    if(argc == 0) error("Syntax");
+	// first count the elements and do the syntax checking
+    for(vcnt = i = 0; i < argc; i++) {
+        if(i & 0x01) {
+            if(*argv[i] != ',') error("Syntax");
+        } else {
+			findvar(argv[i], V_FIND | V_EMPTY_OK);
+			if(vartbl[VarIndex].type & T_CONST) error("Cannot change a constant");
+			card=1;
+//			PInt((uint32_t)ptr);PIntComma((uint32_t)vartbl[VarIndex].val.s);PIntComma((uint32_t)vartbl[VarIndex].dims[0]);PRet();
+			if(emptyarray){ //empty array
+				for(k=0;k<MAXDIM;k++){
+					j=(vartbl[VarIndex].dims[k] - OptionBase + 1);
+					if(j)card *= j;
+				}
+			}
+			num_to_read+=card;
+		}
+	}
+    char **vtbl=GetTempMemory(num_to_read * sizeof (char *));
+    int *vtype=GetTempMemory(num_to_read * sizeof (int));
+    int *vsize=GetTempMemory(num_to_read * sizeof (int));
+
+    // step through the arguments and save the pointer and type
+    for(vcnt = i = 0; i < argc; i+=2) {
+		ptr = vtbl[vcnt] = findvar(argv[i], V_FIND | V_EMPTY_OK);
+		card=1;
+		if(emptyarray){
+			for(k=0;k<MAXDIM;k++){
+				j=(vartbl[VarIndex].dims[k] - OptionBase + 1);
+				if(j)card *= j;
+			}
+		}
+		for(k=0;k<card;k++){
+			if(k){
+				if(vartbl[VarIndex].type & (T_INT | T_NBR))ptr+=8;
+				else ptr+=vartbl[VarIndex].size+1;
+				vtbl[vcnt]=ptr;
+			}
+			vtype[vcnt] = TypeMask(vartbl[VarIndex].type);
+			vsize[vcnt] = vartbl[VarIndex].size;
+			vcnt++;
+		}
+    }
+
+    // setup for a search through the whole memory
+    vidx = 0;
+    datatoken = GetCommandValue("Data");
+    p = lineptr = NextDataLine;
+    if(*p == 0xff) error("No DATA to read");                        // error if there is no program
+
+  // search looking for a DATA statement.  We keep returning to this point until all the data is found
+search_again:
+    while(1) {
+        if(*p == 0) p++;                                            // if it is at the end of an element skip the zero marker
+        if(*p == 0 || *p == 0xff) error("No DATA to read");         // end of the program and we still need more data
+        if(*p == T_NEWLINE) lineptr = p++;
+        if(*p == T_LINENBR) p += 3;
+        skipspace(p);
+        if(*p == T_LABEL) {                                         // if there is a label here
+            p += p[1] + 2;                                          // skip over the label
+            skipspace(p);                                           // and any following spaces
+        }
+        if(*p == datatoken) break;                                  // found a DATA statement
+        while(*p) p++;                                              // look for the zero marking the start of the next element
+    }
+    NextDataLine = lineptr;
+    p++;                                                            // step over the token
+    skipspace(p);
+    if(!*p || *p == '\'') { CurrentLinePtr = lineptr; error("No DATA to read"); }
+
+        // we have a DATA statement, first split the line into arguments
+        {                                                           // new block, the getargs macro must be the first executable stmt in a block
+        getargs(&p, (MAX_ARG_COUNT * 2) - 1, ",");
+        if((argc & 1) == 0) { CurrentLinePtr = lineptr; error("Syntax"); }
+        // now step through the variables on the READ line and get their new values from the argument list
+        // we set the line number to the number of the DATA stmt so that any errors are reported correctly
+        while(vidx < vcnt) {
+            // check that there is some data to read if not look for another DATA stmt
+            if(NextData > argc) {
+                skipline(p);
+                NextData = 0;
+                goto search_again;
+            }
+            CurrentLinePtr = lineptr;
+            if(vtype[vidx] & T_STR) {
+                char *p1, *p2;
+                if(*argv[NextData] == '"') {                               // if quoted string
+                    for(len = 0, p1 = vtbl[vidx], p2 = argv[NextData] + 1; *p2 && *p2 != '"'; len++, p1++, p2++) {
+                       *p1 = *p2;                                   // copy up to the quote
+                    }
+                } else {                                            // else if not quoted
+                    for(len = 0, p1 = vtbl[vidx], p2 = argv[NextData]; *p2 && *p2 != '\'' ; len++, p1++, p2++) {
+                        if(*p2 < 0x20 || *p2 >= 0x7f) error("Invalid character");
+                        *p1 = *p2;                                  // copy up to the comma
+                    }
+                }
+                if(len > vsize[vidx]) error("String too long");
+                *p1 = 0;                                            // terminate the string
+                CtoM(vtbl[vidx]);                                   // convert to a MMBasic string
+            }
+            else {
+                char *p = argv[NextData];
+                while(*p)  *p++ = toupper(*p);                               // all expressions must be in uppercase
+				if(vtype[vidx] & T_INT)
+					*((long long int *)vtbl[vidx]) = getinteger(argv[NextData]); // much easier if integer variable
+				else
+					*((MMFLOAT *)vtbl[vidx]) = getnumber(argv[NextData]);      // same for numeric variable
+				}
+            vidx++;
+            NextData += 2;
+        }
+    }
 }
 
 
@@ -1413,9 +1531,50 @@ search_again:
 
 void cmd_restore(void) {
 	if(*cmdline == 0 || *cmdline == '\'') {
-//        if(CurrentLinePtr >= ProgMemory + PROG_FLASH_SIZE)
-//            NextDataLine = ProgMemory + PROG_FLASH_SIZE;
-//        else
+        NextDataLine = ProgMemory;
+		NextData = 0;
+	} else {
+		skipspace(cmdline);
+		if(*cmdline=='"') {
+			NextDataLine = findlabel(getCstring(cmdline));
+			NextData = 0;
+		}
+		else if(IsDigit(*cmdline) || *cmdline==GetTokenValue( (char *)"+") || *cmdline==GetTokenValue( (char *)"-")  || *cmdline=='.'){
+				NextDataLine = findline(getinteger(cmdline), true);		// try for a line number
+				NextData = 0;
+		} else {
+			void *ptr=findvar(cmdline,V_NOFIND_NULL);
+			if(ptr){
+				if(vartbl[VarIndex].type & T_NBR) {
+					if(vartbl[VarIndex].dims[0] > 0) {		// Not an array
+						error("Syntax");
+					}
+					NextDataLine = findline(getinteger(cmdline), true);
+				} else if(vartbl[VarIndex].type & T_INT) {
+					if(vartbl[VarIndex].dims[0] > 0) {		// Not an array
+						error("Syntax");
+					}
+					NextDataLine = findline(getinteger(cmdline), true);
+				} else {
+					char *c=getCstring(cmdline);
+					char b[STRINGSIZE]={0};
+					char *d=b;
+					while(*c){
+						*d++=toupper(*c++);
+					}
+					NextDataLine = findlabel(b);					    // must be a label
+				}
+			} else if(isnamestart(*cmdline)) {
+				NextDataLine = findlabel(cmdline);					    // must be a label
+			}
+			NextData = 0;
+		}
+	}
+}
+
+/*
+void cmd_restore(void) {
+	if(*cmdline == 0 || *cmdline == '\'') {
             NextDataLine = ProgMemory;
 		NextData = 0;
 	} else {
@@ -1426,7 +1585,7 @@ void cmd_restore(void) {
 		NextData = 0;
 	}
 }
-
+*/
 
 
 void cmd_lineinput(void) {
@@ -1658,13 +1817,13 @@ void MIPS16 cmd_dim(void) {
                         do {
                             p++;                                    // step over the opening bracket or terminating comma
                             p = SetValue(p, type, v);
-                            if(type & T_STR) v += vartbl[VIndexSave].size + 1;
-                            if(type & T_NBR) v += sizeof(MMFLOAT);
-                            if(type & T_INT) v += sizeof(long long int);
+                            if(type & T_STR) v = (char *)v + vartbl[VIndexSave].size + 1;
+                            if(type & T_NBR) v = (char *)v + sizeof(MMFLOAT);
+                            if(type & T_INT) v = (char *)v + sizeof(long long int);
                             skipspace(p); j--;
                         } while(j > 0 && *p == ',');
-                        if(*p != ')') error("Too many initialising values");
-                        if(j != 0) error("Not enough initialising values");
+                        if(*p != ')') error("Number of initialising values");
+                        if(j != 0) error("Number of initialising values");
                     } else
                         SetValue(p, type, v);
                 }

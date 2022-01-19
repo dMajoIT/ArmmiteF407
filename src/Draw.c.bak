@@ -43,8 +43,7 @@ provisions:
     unsigned char *FontTable[FONT_TABLE_SIZE] = {   (unsigned char *)X_8x13_LE,
                                                     (unsigned char *)Misc_12x20_LE,
                                                     (unsigned char *)Hom_16x24_LE,
-													(unsigned char *)Fnt_10x16,
-                                                    //(unsigned char *)Hom_16x24_BLD,  //Fnt_10x16
+                                                    (unsigned char *)Hom_16x24_BLD,
                                                     (unsigned char *)Inconsola,
                                                     (unsigned char *)ArialNumFontPlus,
 													(unsigned char *)F_6x8_LE,
@@ -65,9 +64,7 @@ provisions:
 int gui_font;
 int gui_fcolour;
 int gui_bcolour;
-int gui_reverse;
-extern TIM_HandleTypeDef htim1;                                 //G.A.
-void SetBacklight(int intensity);
+
 int CurrentX, CurrentY;                                             // the current default position for the next char to be written
 int DisplayHRes, DisplayVRes;                                       // the physical characteristics of the display
 char * blitbuffptr[MAXBLITBUF]={NULL};											//Buffer pointers for the BLIT command
@@ -156,7 +153,7 @@ void cmd_guiMX170(void) {
             Option.TOUCH_YZERO = getinteger(argv[4]);
             Option.TOUCH_XSCALE = getinteger(argv[6]) / 10000.0;
             Option.TOUCH_YSCALE = getinteger(argv[8]) / 10000.0;
-            SaveOptions();
+            if(!CurrentLinePtr) SaveOptions();
             return;
         } else {
             if(CurrentLinePtr) error("Invalid in a program");
@@ -243,7 +240,7 @@ void cmd_guiMX170(void) {
     if((p = checkstring(cmdline, "RESET"))) {
         if((checkstring(p, "LCDPANEL"))) {
             InitDisplaySPI(0);
-	if((Option.DISPLAY_TYPE >= SSD_PANEL_START && Option.DISPLAY_TYPE <= SSD_PANEL_END) || (Option.DISPLAY_TYPE >= P16_PANEL_START && Option.DISPLAY_TYPE<= P16_PANEL_END ))  InitDisplaySSD(0);
+	if(((Option.DISPLAY_TYPE >= SSD1963_4 && Option.DISPLAY_TYPE <= SSD_PANEL) || Option.DISPLAY_TYPE==ILI9341_16 || Option.DISPLAY_TYPE==IPS_4_16 ) )  InitDisplaySSD(0);
             if(Option.TOUCH_CS) {
                 GetTouchValue(CMD_PENIRQ_ON);                                      // send the controller the command to turn on PenIRQ
                 GetTouchAxis(CMD_MEASURE_X);
@@ -1520,11 +1517,7 @@ void fun_mmvres(void) {
     targ = T_INT;
 }
 
-/*************************************************************************
- The FONT command will no longer change the PromptFont. In commandline mode
- with Option.DISPLAY_CONSOLE this means the font will revert to the PrompFont
- when a command completes.
- *************************************************************************/
+
 
 void cmd_font(void) {
     getargs(&cmdline, 3, ",");
@@ -1534,14 +1527,13 @@ void cmd_font(void) {
         SetFont(((getint(argv[0], 1, FONT_TABLE_SIZE) - 1) << 4) | getint(argv[2], 1, 15));
     else
         SetFont(((getint(argv[0], 1, FONT_TABLE_SIZE) - 1) << 4) | 1);
-
-    //if(Option.DISPLAY_CONSOLE && !CurrentLinePtr) {                 // if we are at the command prompt on the LCD
-    //    PromptFont = gui_font;
-    //    if(CurrentY + gui_font_height >= VRes) {
-    //        ScrollLCD(CurrentY + gui_font_height - VRes);           // scroll up if the font change split the line over the bottom
-    //        CurrentY -= (CurrentY + gui_font_height - VRes);
-    //    }
-    //}
+    if(Option.DISPLAY_CONSOLE && !CurrentLinePtr) {                 // if we are at the command prompt on the LCD
+        PromptFont = gui_font;
+        if(CurrentY + gui_font_height >= VRes) {
+            ScrollLCD(CurrentY + gui_font_height - VRes);           // scroll up if the font change split the line over the bottom
+            CurrentY -= (CurrentY + gui_font_height - VRes);
+        }
+    }
 }
 
 
@@ -2293,28 +2285,12 @@ void SetFont(int fnt) {
     gui_font = fnt;
 }
 
-void SetBacklight(int intensity){
-	 if (intensity>100)intensity-=101;
-	 if(Option.DISPLAY_TYPE >= SSD_PANEL_START && Option.DISPLAY_TYPE <= SSD_PANEL_END){
-	      SetBacklightSSD1963(intensity);         //Send the command to the SSD1963 incase it strapped that way
-	     // htim1.Instance->CCR3=1000-intensity*10; //Also set the PWM pin in case its strapped that way
-	 }else if(Option.DISPLAY_TYPE==IPS_4_16 ){
-	   	htim1.Instance->CCR3=1000-intensity*10;
-	 } else {
-	   if(Option.DefaultBrightness>100){
-		   htim1.Instance->CCR3=1000-intensity*10;
-	   }else{
-		   htim1.Instance->CCR3=intensity*10;
-	   }
-	 }
-}
 
 void ResetDisplay(void) {
     if(!Option.DISPLAY_CONSOLE) {
         SetFont(Option.DefaultFont);
         gui_fcolour = Option.DefaultFC;
         gui_bcolour = Option.DefaultBC;
-       // SetBacklight(Option.DefaultBrightness);
     }
     ResetGUI();
 }

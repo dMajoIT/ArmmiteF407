@@ -117,6 +117,7 @@ char __attribute__ ((aligned (4))) tknbuf[STRINGSIZE];                          
 int NextData;                                                       // used to track the next item to read in DATA & READ stmts
 char *NextDataLine;                                                 // used to track the next line to read in DATA & READ stmts
 int OptionBase;                                                     // track the state of OPTION BASE
+int emptyarray=0;
 
 
 ///////////////////////////////////////////////////////////////////////////////////////////////
@@ -1526,7 +1527,7 @@ void *findvar(char *p, int action) {
 
     TestStackOverflow();                                            // test if we have overflowed the PIC32's stack
 
-    vtype = dnbr = 0;
+    vtype = dnbr = emptyarray = 0;
     // first zero the array used for holding the dimension values
     for(i = 0; i < MAXDIM; i++) dim[i] = 0;
     ifree = varcnt;
@@ -1570,9 +1571,10 @@ void *findvar(char *p, int action) {
     if(*p == '(') {
         char *pp = p + 1;
         skipspace(pp);
-        if(action & V_EMPTY_OK && *pp == ')')                       // if this is an empty array.  eg  ()
+        if(action & V_EMPTY_OK && *pp == ')'){                       // if this is an empty array.  eg  ()
+        	emptyarray=1;
             dnbr = -1;                                              // flag this
-        else {                                                      // else, get the dimensions
+        } else {                                                      // else, get the dimensions
             // start a new block - getargs macro must be the first executable stmt in a block
             // split the argument into individual elements
             // find the value of each dimension and store in dims[]
@@ -2312,7 +2314,6 @@ void MIPS16 ClearRuntime(void) {
     vol_left = 100; vol_right = 100;
     OptionFileErrorAbort = true;
     ClearStack();
-    ClearVars(0);
     OptionExplicit = false;
     DefaultType = T_NBR;
     ds18b20Timers = NULL;                                           // InitHeap() will recover the memory allocated to this array
@@ -2324,6 +2325,7 @@ void MIPS16 ClearRuntime(void) {
     *MMErrMsg = 0;
     InitHeap();
     m_alloc(0);
+    ClearVars(0);
     varcnt = 0;
     CurrentLinePtr = ContinuePoint = NULL;
     for(i = 0;  i < MAXSUBFUN; i++)  subfun[i] = NULL;
@@ -2537,7 +2539,7 @@ void checkend(char *p) {
 char *checkstring(char *p, char *tkn) {
     skipspace(p);                                           // skip leading spaces
     while(*tkn && (toupper(*tkn) == toupper(*p))) { tkn++; p++; }   // compare the strings
-    if(*tkn == 0 && (*p == ' ' || *p == ',' || *p == '\'' || *p == 0)) {
+    if(*tkn == 0 && (*p == ' ' || *p == ',' || *p == '\'' || *p == '(' || *p == 0)) {
         skipspace(p);
         return p;                                                   // if successful return a pointer to the next non space character after the matched string
     }

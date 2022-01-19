@@ -120,6 +120,25 @@ int OptionBase;                                                     // track the
 int emptyarray=0;
 
 
+const char upper[256]={
+		0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15, //0
+		16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31, //0x10
+		32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47, //0x20
+		48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63, //0x30
+		64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79, //0x40
+		80,81,82,83,84,85,86,87,88,89,90,91,92,93,94,95, //0x50
+		96,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79, //0x60
+		80,81,82,83,84,85,86,87,88,89,90,123,124,125,126,127, //0x70
+		128,129,130,131,132,133,134,135,136,137,138,139,140,141,142,143, //0x80
+		144,145,146,147,148,149,150,151,152,153,154,155,156,157,158,159, //0x90
+		160,161,162,163,164,165,166,167,168,169,170,171,172,173,174,175, //0xA0
+		176,177,178,179,180,181,182,183,184,185,186,187,188,189,190,191, //0xB0
+		192,192,194,195,196,197,198,199,200,201,202,203,204,205,206,207, //0xC0
+		208,209,210,211,212,213,214,215,216,217,218,219,220,221,222,223, //0xD0
+		224,225,226,227,228,229,230,231,232,233,234,235,236,237,238,239, //0xE0
+		240,241,242,243,244,245,246,247,248,249,250,251,252,253,254,255  //0xF0
+};
+
 ///////////////////////////////////////////////////////////////////////////////////////////////
 // Global information used by operators and functions
 //
@@ -205,9 +224,10 @@ void MIPS16 InitBasic(void) {
     cmdFOR=  GetCommandValue("For");
     cmdNEXT= GetCommandValue("Next");
 
-//        PInt(CommandTableSize);
-//        PIntComma(TokenTableSize);
-//        MMPrintString("\r\n");
+     //   PInt(CommandTableSize);
+     //   PIntComma(TokenTableSize);
+     //   MMPrintString("\r\n");
+
 }
 
 
@@ -225,7 +245,7 @@ void ExecuteProgram(char *p) {
             CurrentLinePtr = p;                                     // and pointer to the line for error reporting
             TraceBuff[TraceBuffIndex] = p;                          // used by TRACE LIST
             if(++TraceBuffIndex >= TRACE_BUFF_SIZE) TraceBuffIndex = 0;
-            if(TraceOn && p < ProgMemory + PROG_FLASH_SIZE) {
+            if(TraceOn && p < ProgMemory + Option.ProgFlashSize) {
                 inpbuf[0] = '[';
                 IntToStr(inpbuf + 1, CountLines(p), 10);
                 strcat(inpbuf, "]");
@@ -295,8 +315,8 @@ void MIPS16 PrepareProgram(int ErrAbort) {
 
     NbrFuncts = 0;
     CFunctionFlash = CFunctionLibrary = NULL;
-//    if(PROG_FLASH_SIZE != PROG_FLASH_SIZE)
-//        NbrFuncts = PrepareProgramExt(ProgMemory + PROG_FLASH_SIZE, 0, &CFunctionLibrary, ErrAbort);
+     if(Option.ProgFlashSize != PROG_FLASH_SIZE)
+         NbrFuncts = PrepareProgramExt(ProgMemory + Option.ProgFlashSize, 0, &CFunctionLibrary, ErrAbort);
     PrepareProgramExt(ProgMemory, NbrFuncts, &CFunctionFlash, ErrAbort);
 
     // check the sub/fun table for duplicates
@@ -662,9 +682,97 @@ void DefinedSubFun(int isfun, char *cmd, int index, MMFLOAT *fa, long long int *
     TempMemoryIsChanged = true;                                     // signal that temporary memory should be checked
 	gosubindex--;
 }
+//#ifdef FIXMMINFO
+char *strcasechr(const char *p, int ch)
+{
+	char c;
 
+	c = mytoupper(ch);
+	for (;; ++p) {
+		if (mytoupper(*p) == c)
+			return ((char *)p);
+		if (*p == '\0')
+			return (NULL);
+	}
+	/* NOTREACHED */
+}
 
+char *fstrstr (const char *s1, const char *s2)
+{
+  const char *p = s1;
+  const size_t len = strlen (s2);
 
+  for (; (p = strcasechr (p, *s2)) != 0; p++)
+    {
+      if (strncasecmp (p, s2, len) == 0)
+	return (char *)p;
+    }
+  return (0);
+}
+void str_replace(char *target, const char *needle, const char *replacement)
+{
+    char buffer[288] = { 0 };
+    char *insert_point = &buffer[0];
+    const char *tmp = target;
+    size_t needle_len = strlen(needle);
+    size_t repl_len = strlen(replacement);
+
+    while (1) {
+        const char *p = fstrstr(tmp, needle);
+
+        // walked past last occurrence of needle; copy remaining part
+        if (p == NULL) {
+            strcpy(insert_point, tmp);
+            break;
+        }
+
+        // copy part before needle
+        memcpy(insert_point, tmp, p - tmp);
+        insert_point += p - tmp;
+
+        // copy replacement string
+        memcpy(insert_point, replacement, repl_len);
+        insert_point += repl_len;
+
+        // adjust pointers, move on
+        tmp = p + needle_len;
+    }
+
+    // write altered string back to target
+    strcpy(target, buffer);
+}
+
+void STR_REPLACE(char *target, const char *needle, const char *replacement){
+	char *ip=target;
+	int toggle=0;
+	while(*ip){
+		if(*ip==34){
+			if(toggle==0)toggle=1;
+			else toggle=0;
+		}
+		if(toggle && *ip==' '){
+			*ip=0xFF;
+		}
+		if(toggle && *ip=='.'){
+			*ip=0xFE;
+		}
+		if(toggle && *ip=='='){
+			*ip=0xFD;
+		}
+		ip++;
+	}
+	str_replace(target, needle, replacement);
+	ip=target;
+	while(*ip){
+		if(*ip==0xFF)*ip=' ';
+		if(*ip==0xFE)*ip='.';
+		if(*ip==0xFD)*ip='=';
+		ip++;
+	}
+
+}
+
+//#endif
 /********************************************************************************************************************************************
  take an input line and turn it into a line with tokens suitable for saving into memory
 ********************************************************************************************************************************************/
@@ -690,7 +798,13 @@ void MIPS16 tokenise(int console) {
         if(*p < ' ' || *p == 0x7f)  *p = ' ';
         p++;
     }
-
+//#ifndef FIXMMINFO
+    STR_REPLACE(inpbuf,"MM.INFO$","MM.INFO");
+    STR_REPLACE(inpbuf,"=>",">=");
+    STR_REPLACE(inpbuf,"=<","<=");
+   // STR_REPLACE(inpbuf,"MM.FONTHEIGHT","MM.INFO(FONTHEIGHT)");
+   // STR_REPLACE(inpbuf,"MM.FONTWIDTH","MM.INFO(FONTWIDTH)");
+//#endif
     // setup the input and output buffers
     p = inpbuf;
     op = tknbuf;
@@ -1020,7 +1134,7 @@ long long int getinteger(char *p) {
 int getint(char *p, int min, int max) {
     long long int i;
     i = getinteger(p);
-    if(i < min || i > max) error("% is invalid (valid is % to %)", (int)i, min, max);
+    if(i < min || i > max) error("% invalid (valid % to %)", (int)i, min, max);
     return i;
 }
 
@@ -1344,10 +1458,12 @@ char *findline(int nbr, int mustfind) {
     char *p;
     int i;
 
-    if(CurrentLinePtr >= ProgMemory + PROG_FLASH_SIZE)
-        p = ProgMemory + PROG_FLASH_SIZE;
-    else
-        p = ProgMemory;
+    // point to the main program memory or the library
+    if(CurrentLinePtr >= ProgMemory + Option.ProgFlashSize)
+       p = ProgMemory + Option.ProgFlashSize;
+    else {
+       p = ProgMemory;
+    }
     while(1) {
         if(p[0] == 0 && p[1] == 0) {
             i = MAXLINENBR;
@@ -1405,10 +1521,10 @@ char *findlabel(char *labelptr) {
     label[0] = i - 1;                                               // the length byte
 
     // point to the main program memory or the library
-    if(CurrentLinePtr >= ProgMemory + PROG_FLASH_SIZE)
-        p = ProgMemory + PROG_FLASH_SIZE;
+    if(CurrentLinePtr >= ProgMemory + Option.ProgFlashSize)
+       p = ProgMemory + Option.ProgFlashSize;
     else {
-        p = ProgMemory;
+       p = ProgMemory;
     }
 
     // now do the search
@@ -2047,7 +2163,7 @@ void MIPS16 error(char *msg, ...) {
         llist(tknbuf, CurrentLinePtr);
         p = tknbuf; skipspace(p);
         MMPrintString(MMCharPos > 1 ? "\r\n[" : "[");
-        if(CurrentLinePtr < ProgMemory + PROG_FLASH_SIZE) {
+        if(CurrentLinePtr < ProgMemory + Option.ProgFlashSize) {
             IntToStr(inpbuf, CountLines(CurrentLinePtr), 10);
             MMPrintString(inpbuf);
             StartEditPoint = CurrentLinePtr;
@@ -2064,6 +2180,9 @@ void MIPS16 error(char *msg, ...) {
         MMPrintString(MMErrMsg);
     }
     MMPrintString("\r\n");
+#ifdef CMDHISTORY
+    memset(inpbuf,0,STRINGSIZE);
+#endif
     longjmp(mark, 1);
 }
 

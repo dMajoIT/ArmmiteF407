@@ -58,6 +58,7 @@ extern void CallCFuncInt1(void);                                    // this is i
 extern unsigned int CFuncInt1;                                      // we should call the CFunction Int2 function if this is non zero
 extern void CallCFuncInt2(void);                                    // this is implemented in CFunction.c
 extern unsigned int CFuncInt2;                                      // we should call the CFunction Int2 function if this is non zero
+extern volatile int CSubComplete;
 
 extern SPI_HandleTypeDef hspi1;
 uint32_t synctime=0;
@@ -536,7 +537,7 @@ void fun_pin(void) {
                                  targ = T_NBR;
                                 return;
             case EXT_ANA_IN:    break;
-            default:            error("Pin | is not an input",pin);
+            default:            error("Pin % is not an input",pin);
         }
     } else error("Invalid Pin %", pin);
 
@@ -845,6 +846,13 @@ void cmd_setpin(void) {
                             else
                                 option = 1;
                             break;
+
+        case EXT_CNT_IN:   if(argc == 5)
+                               option = getint((argv[4]), 1, 5);
+                            else
+                                option = 1;
+                            break;
+
         case EXT_DIG_OUT:   if(argc == 5) {
                                 if(checkstring(argv[4], "OC"))
                                     value = EXT_OC_OUT;
@@ -893,7 +901,7 @@ void cmd_pulse(void) {
 	if((code=codecheck(argv[0])))argv[0]+=2;
 	pin = getinteger(argv[0]);
 	if(code)pin=codemap(code, pin);
-	if(!(ExtCurrentConfig[pin] == EXT_DIG_OUT || ExtCurrentConfig[pin] == EXT_OC_OUT)) error("Pin | is not an output", pin);
+	if(!(ExtCurrentConfig[pin] == EXT_DIG_OUT || ExtCurrentConfig[pin] == EXT_OC_OUT)) error("Pin % is not an output", pin);
 
     f = getnumber(argv[2]);                                         // get the pulse width
     if(f < 0) error("Number out of bounds");
@@ -942,7 +950,7 @@ void fun_pulsin(void) { //allowas timeouts up to 10 seconds
 	pin = getinteger(argv[0]);
 	if(code)pin=codemap(code, pin);
     if(IsInvalidPin(pin)) error("Invalid pin");
-	if(ExtCurrentConfig[pin] != EXT_DIG_IN) error("Pin | is not an input",pin);
+	if(ExtCurrentConfig[pin] != EXT_DIG_IN) error("Pin % is not an input",pin);
     polarity = getinteger(argv[2]);
 
     t1 = t2 = 100000;                                               // default timeout is 100mS
@@ -985,7 +993,7 @@ void cmd_ir(void) {
         pin = getinteger(argv[0]);
         dev = getint(argv[2], 0, 0b11111);
         cmd = getint(argv[4], 0, 0b1111111);
-        if(ExtCurrentConfig[pin] >= EXT_COM_RESERVED)  error("Pin  | is in use",pin);
+        if(ExtCurrentConfig[pin] >= EXT_COM_RESERVED)  error("Pin  % is in use",pin);
         ExtCfg(pin, EXT_DIG_OUT, 0);
         cmd = (dev << 7) | cmd;
         IRSendSignal(pin, 186);
@@ -1019,7 +1027,7 @@ void cmd_ir(void) {
 
 void IrInit(void) {
     writeusclock(0);
-    if(ExtCurrentConfig[IRPIN] >= EXT_COM_RESERVED)  error("Pin | is in use",IRPIN);
+    if(ExtCurrentConfig[IRPIN] >= EXT_COM_RESERVED)  error("Pin % is in use",IRPIN);
     ExtCfg(IRPIN, EXT_DIG_IN, 0);
     ExtCfg(IRPIN, EXT_COM_RESERVED, 0);
 	IR_InitDef.Pull = GPIO_PULLUP; //set as input with no pullup or down
@@ -1075,7 +1083,7 @@ void cmd_lcd(void)
         	if((code=codecheck(argv[i * 2])))argv[i * 2]+=2;
             lcd_pins[i] = getinteger(argv[i * 2]);
         	if(code)lcd_pins[i]=codemap(code, lcd_pins[i]);
-            if(ExtCurrentConfig[(int)lcd_pins[i]] >= EXT_COM_RESERVED)  error("Pin | is in use",lcd_pins[i]);
+            if(ExtCurrentConfig[(int)lcd_pins[i]] >= EXT_COM_RESERVED)  error("Pin % is in use",lcd_pins[i]);
             ExtCfg(lcd_pins[i], EXT_DIG_OUT, 0);
             ExtCfg(lcd_pins[i], EXT_COM_RESERVED, 0);
         }
@@ -1207,7 +1215,7 @@ void cmd_WS2812(void){
     	pin = getinteger(argv[2]);
     	if(code)pin=codemap(code, pin);
         if(IsInvalidPin(pin)) error("Invalid pin");
-        if(!(ExtCurrentConfig[pin] == EXT_NOT_CONFIG || ExtCurrentConfig[pin] == EXT_DIG_OUT))  error("Pin | is in use",pin);
+        if(!(ExtCurrentConfig[pin] == EXT_NOT_CONFIG || ExtCurrentConfig[pin] == EXT_DIG_OUT))  error("Pin % is in use",pin);
         ExtCfg(pin, EXT_DIG_OUT, 0);
 		p=GetTempMemory((nbr+1)*3);
 		uSec(60);
@@ -1266,8 +1274,8 @@ void fun_distance(void) {
     }
     else
         echo = trig;                                                // they are the same if it is a 3-pin device
-    if(IsInvalidPin(trig) || IsInvalidPin(echo)) error("Invalid pin |",echo);
-    if(ExtCurrentConfig[trig] >= EXT_COM_RESERVED || ExtCurrentConfig[echo] >= EXT_COM_RESERVED)  error("Pin | is in use",trig);
+    if(IsInvalidPin(trig) || IsInvalidPin(echo)) error("Invalid pin %",echo);
+    if(ExtCurrentConfig[trig] >= EXT_COM_RESERVED || ExtCurrentConfig[echo] >= EXT_COM_RESERVED)  error("Pin % is in use",trig);
     ExtCfg(echo, EXT_DIG_IN, CNPUSET);                              // setup the echo input
     PinSetBit(trig, LATCLR);                                        // trigger output must start low
     ExtCfg(trig, EXT_DIG_OUT, 0);                                   // setup the trigger output
@@ -1327,7 +1335,7 @@ void cmd_keypad(void) {
         	if((code=codecheck(argv[(i + 2) * 2])))argv[(i + 2) * 2]+=2;
         	j = getinteger(argv[(i + 2) * 2]);
         	if(code)j=codemap(code, j);
-            if(ExtCurrentConfig[j] >= EXT_COM_RESERVED)  error("Pin | is in use",j);
+            if(ExtCurrentConfig[j] >= EXT_COM_RESERVED)  error("Pin % is in use",j);
             if(i < 4) {
                 ExtCfg(j, EXT_DIG_IN, CNPUSET);
             } else {
@@ -1415,7 +1423,7 @@ exitcheck:
 	pin = getinteger(argv[0]);
 	if(code)pin=codemap(code, pin);
     if(IsInvalidPin(pin)) error("Invalid pin");
-    if(ExtCurrentConfig[pin] != EXT_NOT_CONFIG)  error("Pin | is in use",pin);
+    if(ExtCurrentConfig[pin] != EXT_NOT_CONFIG)  error("Pin % is in use",pin);
     ExtCfg(pin, EXT_OC_OUT, 0);
 
     // pulse the pin low for 1mS
@@ -1614,7 +1622,7 @@ void initExtIO(void) {
 Configure an I/O pin
 *****************************************************************************************************************************/
 void ExtCfg(int pin, int cfg, int option) {
-	int i;
+	int i,edge,pull;
 
     if(IsInvalidPin(pin)) error("Invalid pin");
 
@@ -1655,10 +1663,20 @@ void ExtCfg(int pin, int cfg, int option) {
 
 		case EXT_PER_IN:		// same as counting, so fall through unless high speed
    		case EXT_FREQ_IN:		// same as counting, so fall through
-		case EXT_CNT_IN:        if(pin == INT1PIN) {
-									GPIO_InitDef.Pull = GPIO_PULLDOWN; //set as input with pull down
+		case EXT_CNT_IN:
+			                   //Set the options for CIN i.e.
+                               edge = GPIO_MODE_IT_RISING;
+                               pull = GPIO_PULLDOWN;
+                               if(cfg==EXT_CNT_IN && option==2)edge = GPIO_MODE_IT_FALLING;
+                               if(cfg==EXT_CNT_IN && option>=3)edge = GPIO_MODE_IT_RISING | GPIO_MODE_IT_FALLING;
+                               //if(option==1 || option==4)pull = GPIO_PULLDOWN;  //Rising and Pull Down or both and pulldown
+                               if(option==2 || option==5)pull = GPIO_PULLUP;    //Falling and pullup or both and pullup
+                               if(option==3 )pull = GPIO_NOPULL;    //Falling and pullup or both and pullup
+
+			                   if(pin == INT1PIN) {
+									GPIO_InitDef.Pull = pull; //set as input with pull down
 									GPIO_InitDef.Pin = PinDef[pin].bitnbr;
-									GPIO_InitDef.Mode = GPIO_MODE_IT_RISING;
+									GPIO_InitDef.Mode = edge;
 									GPIO_InitDef.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
 									HAL_NVIC_SetPriority(EXTI1_IRQn, 2, 0);
 									HAL_NVIC_EnableIRQ(EXTI1_IRQn);
@@ -1668,9 +1686,9 @@ void ExtCfg(int pin, int cfg, int option) {
 									break;
 								}
 								if(pin == INT2PIN) {
-									GPIO_InitDef.Pull = GPIO_PULLDOWN; //set as input with pull down
+									GPIO_InitDef.Pull = pull; //set as input with pull down
 									GPIO_InitDef.Pin = PinDef[pin].bitnbr;
-									GPIO_InitDef.Mode = GPIO_MODE_IT_RISING;
+									GPIO_InitDef.Mode = edge;
 									GPIO_InitDef.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
 									HAL_NVIC_SetPriority(EXTI3_IRQn, 2, 0);
 									HAL_NVIC_EnableIRQ(EXTI3_IRQn);
@@ -1680,8 +1698,8 @@ void ExtCfg(int pin, int cfg, int option) {
 									break;
 								}
 								if(pin == INT3PIN) {
-									GPIO_InitDef.Pull = GPIO_PULLDOWN; //set as input with no pull down
-									GPIO_InitDef.Mode = GPIO_MODE_IT_RISING;
+									GPIO_InitDef.Pull = pull; //set as input with no pull down
+									GPIO_InitDef.Mode = edge;
 									GPIO_InitDef.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
 									HAL_NVIC_SetPriority(EXTI4_IRQn, 2, 0);
 									HAL_NVIC_EnableIRQ(EXTI4_IRQn);
@@ -1691,9 +1709,9 @@ void ExtCfg(int pin, int cfg, int option) {
 									break;
 								}
 								if(pin == INT4PIN) {
-									GPIO_InitDef.Pull = GPIO_PULLDOWN; //set as input with no pull down
+									GPIO_InitDef.Pull = pull; //set as input with no pull down
 									GPIO_InitDef.Pin = PinDef[pin].bitnbr;
-									GPIO_InitDef.Mode = GPIO_MODE_IT_RISING;
+									GPIO_InitDef.Mode = edge;
 									GPIO_InitDef.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
 									HAL_NVIC_SetPriority(EXTI9_5_IRQn, 2, 0);
 									HAL_NVIC_EnableIRQ(EXTI9_5_IRQn);
@@ -1761,7 +1779,7 @@ void ExtSet(int pin, int val){
 
     }
     else
-        error("Pin | is not an output",pin);
+        error("Pin % is not an output",pin);
 }
 
 
@@ -2006,24 +2024,24 @@ int IsInvalidPin(int pin) {
 int MIPS16 CheckPin(int pin, int action) {
 
     if(pin < 1 || pin > NBRPINS || (PinDef[pin].mode & PUNUSED)) {
-    if(!(action & CP_NOABORT)) error("Pin | is invalid", pin);
+    if(!(action & CP_NOABORT)) error("Pin % is invalid", pin);
     return false;
 }
 
 if(!(action & CP_IGNORE_INUSE) && ExtCurrentConfig[pin] > EXT_NOT_CONFIG && ExtCurrentConfig[pin] < EXT_COM_RESERVED) {
-    if(!(action & CP_NOABORT)) error("Pin | is in use", pin);
+    if(!(action & CP_NOABORT)) error("Pin % is in use", pin);
     return false;
 }
 
 if(!(action & CP_IGNORE_BOOTRES) && ExtCurrentConfig[pin] == EXT_BOOT_RESERVED) {
     if(!(action & CP_NOABORT)) {
-        error("Pin | is reserved on startup", pin);
+        error("Pin % is reserved on startup", pin);
         uSec(1000000);
     }
     return false;
 }
 if(!(action & CP_IGNORE_RESERVED) && ExtCurrentConfig[pin] >= EXT_COM_RESERVED) {
-    if(!(action & CP_NOABORT)) error("Pin | is in use", pin);
+    if(!(action & CP_NOABORT)) error("Pin % is in use", pin);
     return false;
 }
 

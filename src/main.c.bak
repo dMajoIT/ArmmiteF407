@@ -120,15 +120,6 @@ uint32_t PROG_FLASH_SIZE = 0x20000;
 void initConsole(void);
 char SerialConDisabled;
 
-#define DISPLAY_CLS             1
-#define REVERSE_VIDEO           3
-#define CLEAR_TO_EOL            4
-#define CLEAR_TO_EOS            5
-#define SCROLL_DOWN             6
-#define DRAW_LINE               7
-//extern void MX470PutS(char *s, int fc, int bc);
-//extern void MX470Cursor(int x, int y);
-extern void MX470Display(int fn);
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -180,58 +171,6 @@ void initConsole(void);
 /* USER CODE BEGIN 0 */
 
 /* USER CODE END 0 */
-#ifdef CMDHISTORY
-char lastcmd[STRINGSIZE*4];            // used to store the last command in case it is needed by the EDIT command (leaves about 512bytes in CCRAM after this)
-void InsertLastcmd( char *s);
-#endif
-#ifdef SET_TERMINAL
-  //int terminal_width,terminal_height;
-  extern void setterminal(void);
-#endif
-
-
-#ifdef DEBUGMODE
-
-// dump a memory area to the console
-// for debugging
-void dump(char *p, int nbr,int page) {
-    char buf1[80], buf2[80], *b1, *b2, *pt;
-    b1 = buf1; b2 = buf2;
-    MMPrintString("\r\n");
-    MMPrintString("---------------------Dump Page ");
-    PInt(page);
-    MMPrintString("----------------  \r\n");
-    MMPrintString("   addr    0  1  2  3  4  5  6  7  8  9  A  B  C  D  E  F    0123456789ABCDEF\r\n");
-    b1 += sprintf(b1, "%8x: ", (unsigned int)p);
-    for(pt = p; (unsigned int)pt % 16 != 0; pt--) {
-        b1 += sprintf(b1, "   ");
-        b2 += sprintf(b2, " ");
-    }
-    while(nbr > 0) {
-        b1 += sprintf(b1, "%02x ", *p);
-        b2 += sprintf(b2, "%c", (*p >= ' ' && *p < 0x7f) ? *p : '.');
-        p++;
-        nbr--;
-        if((unsigned int)p % 16 == 0) {
-            MMPrintString(buf1);
-            MMPrintString("   ");
-            MMPrintString(buf2);
-            b1 = buf1; b2 = buf2;
-            b1 += sprintf(b1, "\r\n%8x: ", (unsigned int)p);
-        }
-    }
-    if(b2 != buf2) {
-        MMPrintString(buf1);
-        MMPrintString("   ");
-        for(pt = p; (unsigned int)pt % 16 != 0; pt++) {
-            MMPrintString("   ");
-        }
-      MMPrintString(buf2);
-    }
-    MMPrintString("\r\n");
-    uSec(50000);
-}
-#endif
 
 /**
   * @brief  The application entry point.
@@ -243,9 +182,9 @@ int main(void)
   	ProgMemory=(char*)FLASH_PROGRAM_ADDR;
 	int i,pullup;
 	static int ErrorInPrompt;
-	//SOption=(volatile struct option_s *)FLASH_SAVED_OPTION_ADDR;
+	SOption=(volatile struct option_s *)FLASH_SAVED_OPTION_ADDR;
     SavedMemoryBufferSize=0;
-	//RAMBase = (void *)((unsigned int)RAMBASE);
+	RAMBase = (void *)((unsigned int)RAMBASE);
   /* USER CODE END 1 */
   
 
@@ -272,13 +211,12 @@ int main(void)
 	!(Option.Tab==2 || Option.Tab==4 ||Option.Tab==8) ||
 	!(Option.SerialConDisabled==0 || Option.SerialConDisabled==1)
   	  ){
-	  // ResetAllFlash();   // init the options if this is the very first startup
-	  ResetAllBackupRam();  // We don't need/want to clear Program Memory so just clear saved vars and reset options in the battery Backup Ram
+	  ResetAllFlash();              // init the options if this is the very first startup
 	  _excep_code=0;
   }
   SerialConDisabled=Option.SerialConDisabled;
-
-
+  PROG_FLASH_SIZE = 0x20000;
+//  PROG_FLASH_SIZE = PROG_FLASH_SIZE;
   RAMBase = (void *)((unsigned int)RAMBASE + (Option.MaxCtrls * sizeof(struct s_ctrl))+ SavedMemoryBufferSize);
   RAMBase = (void *)MRoundUp((unsigned int)RAMBase);
   PinDef = (struct s_PinDef *)PinDef100 ;
@@ -347,7 +285,7 @@ int main(void)
   		GPIO_InitStruct.Pull = GPIO_PULLUP;
   		HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
   		if(!HAL_GPIO_ReadPin(GPIOE,  GPIO_PIN_3)){
-  			//FlashWriteInit(PROGRAM_FLASH);    //This is included in ResetAllFlash() so is not required here
+  			FlashWriteInit(PROGRAM_FLASH);
   			ResetAllFlash();
   		}
   		GPIO_InitStruct.Pin = KEY1_Pin;
@@ -410,7 +348,6 @@ int main(void)
     InitDisplaySSD(1);
     InitBasic();
     InitTouch();
-    InitFlash_CS();    //Initialise the CS for the Windbond flash so it doesn't interfere with SPI1
     InitHeap();
 //    InitFileIO();
     BasicRunning = true;
@@ -454,26 +391,15 @@ int main(void)
         // we got here via a long jump which means an error or CTRL-C or the program wants to exit to the command prompt
         ContinuePoint = nextstmt;                                   // in case the user wants to use the continue command
         *tknbuf = 0;                                                // we do not want to run whatever is in the token buffer
-#ifdef CMDHISTORY
-         memset(inpbuf,0,STRINGSIZE);
-#endif
-    } else {
+    	} else {
           if(_excep_cause != CAUSE_MMSTARTUP) {
               ClearProgram();
               PrepareProgram(true);
               _excep_cause = CAUSE_MMSTARTUP;
-#if defined(TEST_CONFIG)
-            CurrentLinePtr = inpbuf;
-            strcpy(inpbuf, TEST_CONFIG);
-            tokenise(true);
-            ExecuteProgram(tknbuf);
-            memset(inpbuf,0,STRINGSIZE);
-#endif
               if(FindSubFun("MM.STARTUP", 0) >= 0) ExecuteProgram("MM.STARTUP\0");
               _excep_cause = CAUSE_NOTHING;
-              //if(Option.Autorun && *ProgMemory == 0x01 && _excep_code != RESTART_NOAUTORUN) {
-              if((Option.Autorun && *ProgMemory == 0x01 && _excep_code != RESTART_NOAUTORUN) || (_excep_code==RESTART_DOAUTORUN && *ProgMemory == 0x01)) {
-                  if(Option.ProgFlashSize != PROG_FLASH_SIZE) ExecuteProgram(ProgMemory + Option.ProgFlashSize);       // run anything that might be in the library
+              if(Option.Autorun && *ProgMemory == 0x01 && _excep_code != RESTART_NOAUTORUN) {
+//                  if(PROG_FLASH_SIZE != PROG_FLASH_SIZE) ExecuteProgram(ProgMemory + PROG_FLASH_SIZE);       // run anything that might be in the library
                   ExecuteProgram(ProgMemory);                                                                          // then run the program if autorun is on
               }
           }
@@ -543,36 +469,13 @@ int main(void)
             MMPrintString("> ");                                    // print the prompt
         }
         ErrorInPrompt = false;
-#ifdef CMDHISTORY
-        EditInputLine();          //Enter|Recall|Edit the command line. Save to command history
-#else
         MMgetline(0, inpbuf);                                       // get the input
-#endif
         if(!*inpbuf) continue;                                      // ignore an empty line
-#ifdef RUNSHORTCUT
-        char *p=inpbuf;
-        skipspace(p);
-        if(*p=='*'){ //shortform RUN command so convert to a normal version
-       		  memmove(&p[4],&p[0],strlen(p)+1);
-       		  p[0]='R';p[1]='U';p[2]='N';p[3]='$';p[4]=34;
-       		  char  *q;
-       		  if((q=strchr(p,' ')) != 0){ //command line after the filename
-       			  *q=','; //chop the command at the first space character
-       			  memmove(&q[1],&q[0],strlen(q)+1);
-       			  q[0]=34;
-       		  } else strcat(p,"\"");
-       		  p[3]=' ';
-       //		  PRet();MMPrintString(inpbuf);PRet();
-       	  }
-#endif
         tokenise(true);                                             // turn into executable code
         if(*tknbuf == T_LINENBR)                                    // don't let someone use line numbers at the prompt
             tknbuf[0] = tknbuf[1] = tknbuf[2] = ' ';                // convert the line number into spaces
         ExecuteProgram(tknbuf);                                     // execute the line straight away
-#ifdef CMDHISTORY
-        memset(inpbuf,0,STRINGSIZE);
-#endif
-        /* USER CODE END WHILE */
+    /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
   }
@@ -1925,17 +1828,6 @@ static void myMX_FSMC_Init(void)
 }
 // send a character to the Console serial port
 void SerialConsolePutC(int c) {
-
-	if(c == '\b') {
-			    	if (MMCharPos==1){
-			            //MMCharPos = 80;
-			            //SerUSBPutS("\e[1A");SerUSBPutS("\e[80C");
-			            //MMCharPos = 80;
-			            //return;
-			    	}else{
-			    		MMCharPos -= 1;
-			    	}
-	}
 	if(Option.SerialConDisabled==0){
 		int empty=(huart1.Instance->SR & USART_SR_TC) | !(huart1.Instance->CR1 & USART_CR1_TCIE) ;
 		while(ConsoleTxBufTail == ((ConsoleTxBufHead + 1) % CONSOLE_TX_BUF_SIZE)); //wait if buffer full
@@ -1951,7 +1843,6 @@ void SerialConsolePutC(int c) {
 		ConsoleTxBufHead = (ConsoleTxBufHead + 1) % CONSOLE_TX_BUF_SIZE;		   // advance the head of the queue
 		HAL_ResumeTick();
 	}
-
 }
 // get a char from the UART1 serial port (the console)
 // will return immediately with -1 if there is no character waiting
@@ -1993,7 +1884,6 @@ void SerUSBPutS(char *s) {
 }
 void initConsole(void) {
     ConsoleRxBufHead = ConsoleRxBufTail = 0;
-
 }
 
 void SoftReset(void){
@@ -2154,7 +2044,7 @@ void SaveProgramToFlash(char *pm, int msg) {
         while(!(p[0] == 0 && p[1] == 0)) {
             FlashWriteByte(*p++); nbr++;
 
-            if((realflashpointer - (uint32_t)ProgMemory) >= Option.ProgFlashSize - 5)
+            if((realflashpointer - (uint32_t)ProgMemory) >= PROG_FLASH_SIZE - 5)
                 goto exiterror1;
         }
         FlashWriteByte(0); nbr++;                              // terminate that line in flash
@@ -2229,8 +2119,7 @@ void SaveProgramToFlash(char *pm, int msg) {
                      n = 0;
                      for(i = 0; i < 8; i++) {
                          if(!IsxDigit((uint8_t)*p)) error("Invalid hex word");
-                         //if((int)((char *)realflashpointer - ProgMemory) >= PROG_FLASH_SIZE - 5) error("Not enough memory");
-                         if((int)((char *)realflashpointer - ProgMemory) >= Option.ProgFlashSize - 5) error("Not enough memory 7");
+                         if((int)((char *)realflashpointer - ProgMemory) >= PROG_FLASH_SIZE - 5) error("Not enough memory");
                          n = n << 4;
                          if(*p <= '9')
                              n |= (*p - '0');
@@ -2320,7 +2209,7 @@ void SaveProgramToFlash(char *pm, int msg) {
                      n = 0;
                      for(i = 0; i < 8; i++) {
                          if(!IsxDigit(*p)) error("Invalid hex word");
-                         if((int)((char *)realflashpointer - ProgMemory) >= Option.ProgFlashSize - 5) error("Not enough memory 7");
+                         if((int)((char *)realflashpointer - ProgMemory) >= PROG_FLASH_SIZE - 5) error("Not enough memory");
                          n = n << 4;
                          if(*p <= '9')
                              n |= (*p - '0');
@@ -2348,7 +2237,7 @@ void SaveProgramToFlash(char *pm, int msg) {
      }
      FlashWriteWord(0xffffffff);                                // make sure that the end of the CFunctions is terminated with an erased word
      FlashWriteClose();                                              // this will flush the buffer and step the flash write pointer to the next word boundary
-     AppendLibrary(false);
+
     if(msg) {                                                       // if requested by the caller, print an informative message
         if(MMCharPos > 1) MMPrintString("\r\n");                    // message should be on a new line
         MMPrintString("Saved ");
@@ -2364,7 +2253,7 @@ void SaveProgramToFlash(char *pm, int msg) {
     exiterror1:
         FlashWriteByte(0); FlashWriteByte(0); FlashWriteByte(0);    // terminate the program in flash
         FlashWriteClose();
-        error("Not enough memory 7");
+        error("Not enough memory");
 }
 
 // get a keystroke from the console.  Will wait forever for input
@@ -2395,7 +2284,6 @@ char MMputchar(char c) {
     if(c == '\r') {
         MMCharPos = 1;
     }
-
     return c;
 }
 
@@ -2413,660 +2301,6 @@ void Error_Handler(void)
 
   /* USER CODE END Error_Handler_Debug */
 }
-
-#ifdef  CMDHISTORY
-// insert a string into the start of the lastcmd buffer.
-// the buffer is a sequence of strings separated by a zero byte.
-// using the up arrow usere can call up the last few commands executed.
-void InsertLastcmd( char *s) {
-int i, slen;
-    if(strcmp(lastcmd, s) == 0) return;                             // don't duplicate
-    slen = strlen(s);
-    if(slen < 1 || slen > STRINGSIZE*4 - 1) return;
-    slen++;
-    for(i = STRINGSIZE*4 - 1; i >=  slen ; i--)
-        lastcmd[i] = lastcmd[i - slen];                             // shift the contents of the buffer up
-    strcpy(lastcmd, s);                                             // and insert the new string in the beginning
-    for(i = STRINGSIZE*4 - 1; lastcmd[i]; i--) lastcmd[i] = 0;             // zero the end of the buffer
-}
-
-// Debug display onto LCDPANEL
-void show(int i,int pos,char *s){
-
-	 char tt[20];
-	 int x,y;
-	 x=CurrentX;y=CurrentY;
-	  IntToStr(tt, i, 10);
-      strcat(tt,"      ");
-      GUIPrintString(50*pos, 0, 0x11, JUSTIFY_LEFT, JUSTIFY_TOP, ORIENT_NORMAL, WHITE, BLACK, s);
-	  GUIPrintString(50*pos, 20, 0x11, JUSTIFY_LEFT, JUSTIFY_TOP, ORIENT_NORMAL, WHITE, BLACK, tt);
-   CurrentX=x;CurrentY=y;
-}
-
-void EditInputLine(void) {
-    char *p = NULL;
-    char buf[MAXKEYLEN + 3];
-    char goend[10];
-    int lastcmd_idx, lastcmd_edit;
-    int insert, /*startline,*/ maxchars;
-    int CharIndex, BufEdited;
-    int c, i, j;
-    int l4,l3,l2;
-    //maxchars = 2*Option.Width-1;
-    maxchars=255; //i.e. 3 lines on Vt100 width 80 -2 characters for prompt.
-   // l2=78;  //  Option.width-2
-   // l3=158; // 2*Option.Width -2
-   // l4=238; // 3*Option.Width -2
-    if(Option.DISPLAY_CONSOLE){
-      l2=SCREENWIDTH-2;
-      l3=2*SCREENWIDTH-2;
-      l4=3*SCREENWIDTH-2;
-    }else{
-      l2=Option.Width -2;
-      l3=2*Option.Width-2;
-      l4=3*Option.Width-2;
-    }
-    // Build "\e[80C" equivalent string for the line length
-    strcat(goend, "\e[");IntToStr(goend + strlen(goend),l2+2, 10); strcat(goend, "C");
-    //if(strlen(inpbuf) >= maxchars) {
-       // MMPrintString(inpbuf);
-        //BufEdited = false;
-        //i = strlen(inpbuf);
-        //for(p = inpbuf + i; *p; p++) *p = *(p + 1);                 // remove the char from inpbuf
-       // error("Line is too long to edit 1");
-   // }
-   // startline = MMCharPos - 1;                                                          // save the current cursor position
-    MMPrintString(inpbuf);                                                              // display the contents of the input buffer (if any)
-    CharIndex = strlen(inpbuf);                                                         // get the current cursor position in the line
-    insert = false;
-
-    lastcmd_edit = lastcmd_idx = 0;
-    BufEdited = false; //(CharIndex != 0);
-    while(1) {
-    	do {
-    		if(BufEdited)ShowCursor(true,insert);
-    		  c = MMInkey();
-    		} while(c == -1);
-    		ShowCursor(false,insert);
-
-        if(c == TAB) {
-            strcpy(buf, "        ");
-            switch (Option.Tab) {
-              case 2:
-                buf[2 - (CharIndex % 2)] = 0; break;
-              case 3:
-                buf[3 - (CharIndex % 3)] = 0; break;
-              case 4:
-                buf[4 - (CharIndex % 4)] = 0; break;
-              case 8:
-                buf[8 - (CharIndex % 8)] = 0; break;
-            }
-        } else {
-            buf[0] = c;
-            buf[1] = 0;
-
-        }
-        do {
-            switch(buf[0]) {
-                case '\r':
-                case '\n':  //if(autoOn && atoi(inpbuf) > 0) autoNext = atoi(inpbuf) + autoIncr;
-                            //if(autoOn && !BufEdited) *inpbuf = 0;
-                            goto saveline;
-                            break;
-
-                case '\b':
-                	           if(CharIndex > 0) {
-                	                 BufEdited = true;
-
-                                     i = CharIndex - 1;
-                                     j= CharIndex;
-                                     for(p = inpbuf + i; *p; p++) *p = *(p + 1);                       // remove the char from inpbuf
-                                 // Lets put the cursor at the beginning of where the command is displayed.
-                                // CurrentX=0;CurrentY=CurrentY-((CharIndex+1)/Option.Width * gui_font_height);
-                               //  if (CharIndex>l3)SerUSBPutS("\e[2A");
-                               //  else if(CharIndex>l2)SerUSBPutS("\e[1A");
-                               //  SerUSBPutS("\r");
-                               //  MMPrintString("> ");
-
-                                 // backspace to the beginning of line
-                                 //if(j > 0) {
-                                 while(j)  {
-                                   // MMputchar('\b');
-                                	if (j==l4 || j==l3 ||j==l2 ){DisplayPutC('\b');SerUSBPutS("\e[1A");SerUSBPutS(goend);}else{ MMputchar('\b');}
-                                   	j--;
-                                 }
-                                 fflush(stdout);
-                                // MMCharPos=3;CurrentX=2*gui_font_width;
-                                MX470Display(CLEAR_TO_EOS);SerUSBPutS("\033[0J");        //Clear to End Of Screen
-
-                                 j=0;
-                                 while(j < strlen(inpbuf)) {
-                                       //BufEdited = true;
-                                      // MMPrintString(inpbuf);
-                                       MMputchar(inpbuf[j]);
-                                       if((j==l4-1 || j==l3-1 || j==l2-1 ) && j == strlen(inpbuf)-1 ){SerUSBPutS(" ");SerUSBPutS("\b");}
-                                       if((j==l4-1 || j==l3-1 || j==l2-1 ) && j < strlen(inpbuf)-1 ){SerUSBPutC(inpbuf[j+1]);SerUSBPutS("\b");}
-
-                                      j++;
-                                 }
-                                 fflush(stdout);
-
-                                 // return the cursor to the right position
-                                 for(j = strlen(inpbuf); j > i; j--){
-                                  //  MMputchar('\b');
-                                    if (j==l4 || j==l3 || j==l2) {DisplayPutC('\b');SerUSBPutS("\e[1A");SerUSBPutS(goend);}else{MMputchar('\b');}
-                                 }
-                                 CharIndex--;
-
-                                 fflush(stdout);
-                                 if(strlen(inpbuf)==0)BufEdited = false;
-                            }
-                            break;
-
-
-                /****************************************** <--- arrow *****************************************************/
-                case CTRLKEY('S'):
-                case LEFT:
-
-                	    BufEdited = true;
-                	    insert=false; //left at first char will turn OVR on
-                	    if(CharIndex > 0) {
-                                if(CharIndex == strlen(inpbuf)) {
-                                    //insert = true;
-                                }
-                                //MMputchar('\b');
-                                if (CharIndex==l4 || CharIndex==l3 || CharIndex==l2 ){DisplayPutC('\b');SerUSBPutS("\e[1A");SerUSBPutS(goend);}else{MMputchar('\b');}
-                                //if(CharIndex==l2){SerUSBPutS("\e[1A");SerUSBPutS("\e[80C");}
-                                insert=true; //Any left turns on INS
-                                CharIndex--;
-                         }
-                     break;
-
-                /****************************************** --->  arrow *****************************************************/
-                case CTRLKEY('D'):
-                case RIGHT:
-
-                	  if(CharIndex < strlen(inpbuf)) {
-                	   	BufEdited = true;
-                	    MMputchar(inpbuf[CharIndex]);
-                	    if((CharIndex==l4-1 || CharIndex==l3-1|| CharIndex==l2-1 ) && CharIndex == strlen(inpbuf)-1 ){SerUSBPutS(" ");SerUSBPutS("\b");}
-                	    if((CharIndex==l4-1 || CharIndex==l3-1|| CharIndex==l2-1 ) && CharIndex < strlen(inpbuf)-1 ){SerUSBPutC(inpbuf[CharIndex+1]);SerUSBPutS("\b");}
-                    	//if(CharIndex==l2-1 && CharIndex < strlen(inpbuf)-1){SerUSBPutC(inpbuf[CharIndex+1]);SerUSBPutS("\b");}
-                        CharIndex++;
-                      }
-
-                      insert=false; //right always switches to OVER
-                     break;
-
-                /*********************************************DEL ********************************************************/
-                case CTRLKEY(']'):
-                case DEL:
-
-                	      if(CharIndex < strlen(inpbuf)) {
-                	           BufEdited = true;
-                	           i = CharIndex;
-
-                	           for(p = inpbuf + i; *p; p++) *p = *(p + 1);                 // remove the char from inpbuf
-                	           j = strlen(inpbuf);
-                	           // Lets put the cursor at the beginning of where the command is displayed.
-                	           CurrentX=0;CurrentY=CurrentY-((CharIndex+1)/Option.Width * gui_font_height);
-                	           if (CharIndex>l4)SerUSBPutS("\e[3A");
-                	           else if (CharIndex>l3)SerUSBPutS("\e[2A");
-                	           else if(CharIndex>l2)SerUSBPutS("\e[1A");
-                	           SerUSBPutS("\r");
-                	           MMPrintString("> ");MX470Display(CLEAR_TO_EOS);SerUSBPutS("\033[0J");        //Clear to End Of Screen
-
-                               j=0;
-                               while(j < strlen(inpbuf)) {
-                                    MMputchar(inpbuf[j]);
-                                    if((j==l4-1 || j==l3-1 || j==l2-1 ) && j == strlen(inpbuf)-1 ){SerUSBPutS(" ");SerUSBPutS("\b");}
-                                    if((j==l4-1 || j==l3-1 || j==l2-1 ) && j < strlen(inpbuf)-1 ){SerUSBPutC(inpbuf[j+1]);SerUSBPutS("\b");}
-                                    j++;
-                               }
-                               fflush(stdout);
-                               // return the cursor to the right position
-                               for(j = strlen(inpbuf); j > i; j--){
-                                     // MMputchar('\b');
-                                      if (j==l4 || j==l3 || j==l2) {DisplayPutC('\b');SerUSBPutS("\e[1A");SerUSBPutS(goend);}else{ MMputchar('\b');}
-                               }
-                               fflush(stdout);
-                           }
-                	       break;
-
-                /*********************************************INS ********************************************************/
-                case CTRLKEY('N'):
-                case INSERT:insert = !insert;
-
-                            break;
-
-               /*********************************************HOME ********************************************************/
-                case CTRLKEY('U'):
-                case HOME:
-                	         BufEdited = true;
-                	         if(CharIndex > 0) {
-                                if(CharIndex == strlen(inpbuf)) {
-                                    insert = true;
-                                }
-                                // backspace to the beginning of line
-                                while(CharIndex)  {
-                                	// MMputchar('\b');
-
-                                	 if (CharIndex==l4 || CharIndex==l3 || CharIndex==l2 ){DisplayPutC('\b');SerUSBPutS("\e[1A");SerUSBPutS(goend);}else{MMputchar('\b');}
-                                   	 CharIndex--;
-                                }
-                                fflush(stdout);
-                            }else{ //HOME @ home turns off edit mode
-                            	BufEdited = false;
-                            }
-                            break;
-              /*********************************************END ********************************************************/
-                case CTRLKEY('K'):
-                case END:
-                	        BufEdited = true;
-                	        while(CharIndex < strlen(inpbuf))
-                                MMputchar(inpbuf[CharIndex++]);
-                            fflush(stdout);
-                            break;
-
-/*            if(c == F2)  tp = "RUN";
-            if(c == F3)  tp = "LIST";
-            if(c == F4)  tp = "EDIT";
-            if(c == F10) tp = "AUTOSAVE";
-            if(c == F11) tp = "XMODEM RECEIVE";
-            if(c == F12) tp = "XMODEM SEND";
-            if(c == F5) tp = Option.F5key;
-            if(c == F6) tp = Option.F6key;
-            if(c == F7) tp = Option.F7key;
-            if(c == F8) tp = Option.F8key;
-            if(c == F9) tp = Option.F9key;
-*/
-             /****************************************Function Keys ***************************************************/
-                case 0x91:      //F1
-                    break;
-                case 0x92:      //F2
-                    strcpy(&buf[1],"RUN\r\n");
-                    break;
-                case 0x93:       //F3
-                    strcpy(&buf[1],"LIST\r\n");
-                    break;
-                case 0x94:       //F4
-                    strcpy(&buf[1],"EDIT\r\n");
-                    break;
-               case 0x95:
-
-            	    /*** F5 will clear LCDPANEL and the VT100  ***/
-            	      SerUSBPutS("\e[2J\e[H");
-            	      fflush(stdout);
-            	      if(Option.DISPLAY_CONSOLE){MX470Display(DISPLAY_CLS);CurrentX=0;CurrentY=0;}
-            	      MMPrintString("> ");
-            	      fflush(stdout);
-                      break;
-               // case 0x96:
-               //     if(*Option.F6key)strcpy(&buf[1],Option.F6key);
-               //     break;
-               // case 0x97:
-               //     if(*Option.F7key)strcpy(&buf[1],Option.F7key);
-               //     break;
-               // case 0x98:
-               //     if(*Option.F8key)strcpy(&buf[1],Option.F8key);
-               //     break;
-               // case 0x99:
-               //     if(*Option.F9key)strcpy(&buf[1],Option.F9key);
-               //     break;
-                case 0x9a:   //F10
-                    strcpy(&buf[1],"AUTOSAVE\r\n");
-                    break;
-                case 0x9b:   //F11
-                    strcpy(&buf[1],"XMODEM RECEIVE\r\n");
-                    break;
-                 case 0x9c:  //F12
-                    strcpy(&buf[1],"XMODEM SEND\r\n");
-                    break;
-
-                                     /*  ^          */
-                                     /* /|\         */
-                case CTRLKEY('E'):   /*  | Up arrow */
-                case UP:    if(!(BufEdited /*|| autoOn || CurrentLineNbr */)) {
-
-                	            if(lastcmd_edit) {
-                                    i = lastcmd_idx + strlen(&lastcmd[lastcmd_idx]) + 1;    // find the next command
-                                    if(lastcmd[i] != 0 && i < STRINGSIZE*4 - 1) lastcmd_idx = i;  // and point to it for the next time around
-                                } else
-                                    lastcmd_edit = true;
-                                strcpy(inpbuf, &lastcmd[lastcmd_idx]);                      // get the command into the buffer for editing
-                                goto insert_lastcmd;
-                            }
-                            break;
-
-                                    /*  |               */
-                case CTRLKEY('X'):  /* \|/  Down Arrow  */
-                case DOWN:  if(!(BufEdited)) {
-
-                                if(lastcmd_idx == 0)
-                                    *inpbuf = lastcmd_edit = 0;
-                                else {
-                                    for(i = lastcmd_idx - 2; i > 0 && lastcmd[i - 1] != 0; i--);// find the start of the previous command
-                                    lastcmd_idx = i;                                        // and point to it for the next time around
-                                    strcpy(inpbuf, &lastcmd[i]);                            // get the command into the buffer for editing
-                                }
-                                goto insert_lastcmd;                                        // gotos are bad, I know, I know
-                            }
-                            break;
-
-                insert_lastcmd:                                                             // goto here if we are just recalling a command from buffer
-
-
-			               // Lets put the cursor at the beginning of where the command is displayed.
-			               CurrentX=0;CurrentY=CurrentY-((CharIndex+1)/Option.Width * gui_font_height);
-			               if (CharIndex>l4-1)SerUSBPutS("\e[3A");
-			               else if (CharIndex>l3-1)SerUSBPutS("\e[2A");
-			               else if(CharIndex>l2-1)SerUSBPutS("\e[1A");
-			               SerUSBPutS("\r");
-
-
-				            //CurrentX=0;SerUSBPutS("\r");
-				            MX470Display(CLEAR_TO_EOS);
-				            SerUSBPutS("\033[0J");
-
-				            MMPrintString("> ");
-				            CharIndex = strlen(inpbuf);
-                            MMPrintString(inpbuf);                                          // display the line
-                            if(CharIndex==l4 || CharIndex==l3 || CharIndex==l2){SerUSBPutS(" ");SerUSBPutS("\b");}
-                            fflush(stdout);
-                            CharIndex = strlen(inpbuf);                                     // get the current cursor position in the line
-                            break;
-
-
-                /********************************************* Other Keys ********************************************************/
-                default:    if(buf[0] >= ' ' && buf[0] < 0x7f) {
-                                //BufEdited = true;                                           // this means that something was typed
-                                i = CharIndex;
-                                j = strlen(inpbuf);
-                                if(insert) {
-                                    if(strlen(inpbuf) >= maxchars - 1) break;               // sorry, line fulljust ignore
-                                    for(p = inpbuf + strlen(inpbuf); j >= CharIndex; p--, j--) *(p + 1) = *p;
-                                    inpbuf[CharIndex] = buf[0];                             // insert the char
-                                    MMPrintString(&inpbuf[CharIndex]);                      // display new part of the line
-                                    CharIndex++;
-                                    for(j = strlen(inpbuf); j > CharIndex; j--){
-                                       // MMputchar('\b');
-                                        if (j==l4 || j==l3 || j==l2){DisplayPutC('\b');SerUSBPutS("\e[1A");SerUSBPutS(goend);}else{ MMputchar('\b');}
-
-                                    }
-                                    fflush(stdout);                                   // return the cursor to the right position
-
-                                } else {
-                                	if(strlen(inpbuf) >= maxchars-1 ) break;               // sorry, line full  just ignore
-                                    inpbuf[strlen(inpbuf) + 1] = 0;                         // incase we are adding to the end of the string
-                                    inpbuf[CharIndex++] = buf[0];                           // overwrite the char
-                                    MMputchar(buf[0]);                                      // display it
-                                    if(j==l4-1 || j==l3-1 || j==l2-1){SerUSBPutS(" ");SerUSBPutS("\b");}
-                                    fflush(stdout);
-                                }
-
-                            }
-                            break;
-            }
-            for(i = 0; i < MAXKEYLEN + 1; i++) buf[i] = buf[i + 1];                             // shuffle down the buffer to get the next char
-        } while(*buf);
-        if(CharIndex == strlen(inpbuf)) {insert = false;}
-       // show(MMCharPos,0,"CharPOS");
-       // show(MMCharPos,2,"inpbuf");
-    }
-
-    saveline:
-    MMPrintString("\r\n");
-    BufEdited = false;
-    if(strlen(inpbuf) < maxchars)InsertLastcmd(inpbuf);
-
-}
-#endif
-#ifdef pico
-void EditInputLine(void) {
-    char *p = NULL;
-    char buf[MAXKEYLEN + 3];
-    int lastcmd_idx, lastcmd_edit;
-    int insert, startline, maxchars;
-    int CharIndex, BufEdited;
-    int c, i, j;
-    maxchars = Option.Width;
-    if(strlen(inpbuf) >= maxchars) {
-        MMPrintString(inpbuf);
-        error("Line is too long to edit");
-    }
-    startline = MMCharPos - 1;                                                          // save the current cursor position
-    MMPrintString(inpbuf);                                                              // display the contents of the input buffer (if any)
-    CharIndex = strlen(inpbuf);                                                         // get the current cursor position in the line
-    insert = false;
-//    Cursor = C_STANDARD;
-    lastcmd_edit = lastcmd_idx = 0;
-    BufEdited = false; //(CharIndex != 0);
-    while(1) {
-        c = MMgetchar();
-        if(c == TAB) {
-            strcpy(buf, "        ");
-            switch (Option.Tab) {
-              case 2:
-                buf[2 - (CharIndex % 2)] = 0; break;
-              case 3:
-                buf[3 - (CharIndex % 3)] = 0; break;
-              case 4:
-                buf[4 - (CharIndex % 4)] = 0; break;
-              case 8:
-                buf[8 - (CharIndex % 8)] = 0; break;
-            }
-        } else {
-            buf[0] = c;
-            buf[1] = 0;
-        }
-        do {
-            switch(buf[0]) {
-                case '\r':
-                case '\n':  //if(autoOn && atoi(inpbuf) > 0) autoNext = atoi(inpbuf) + autoIncr;
-                            //if(autoOn && !BufEdited) *inpbuf = 0;
-                            goto saveline;
-                            break;
-
-                case '\b':
-
-                	        if(CharIndex > 0) {
-                                BufEdited = true;
-                                i = CharIndex - 1;
-                                for(p = inpbuf + i; *p; p++) *p = *(p + 1);                 // remove the char from inpbuf
-                                while(CharIndex)  { MMputchar('\b',0); CharIndex--; }         // go to the beginning of the line
-                                MMPrintString(inpbuf); MMputchar(' ',0); MMputchar('\b',0);     // display the line and erase the last char
-                                for(CharIndex = strlen(inpbuf); CharIndex > i; CharIndex--)
-                                    MMputchar('\b',0);
-                                fflush(stdout);                                      // return the cursor to the righ position
-                            }
-                            break;
-
-                case CTRLKEY('S'):
-                case LEFT:  if(CharIndex > 0) {
-                                if(CharIndex == strlen(inpbuf)) {
-                                    insert = true;
-      //                              Cursor = C_INSERT;
-                                }
-                                MMputchar('\b',1);
-                                CharIndex--;
-                            }
-                            break;
-
-                case CTRLKEY('D'):
-                case RIGHT: if(CharIndex < strlen(inpbuf)) {
-                                MMputchar(inpbuf[CharIndex],1);
-                                CharIndex++;
-                            }
-                            break;
-
-                case CTRLKEY(']'):
-                case DEL:   if(CharIndex < strlen(inpbuf)) {
-                                BufEdited = true;
-                                i = CharIndex;
-                                for(p = inpbuf + i; *p; p++) *p = *(p + 1);                 // remove the char from inpbuf
-                                while(CharIndex)  { MMputchar('\b',0); CharIndex--; }         // go to the beginning of the line
-                                MMPrintString(inpbuf); MMputchar(' ',0); MMputchar('\b',0);     // display the line and erase the last char
-                                for(CharIndex = strlen(inpbuf); CharIndex > i; CharIndex--)
-                                    MMputchar('\b',0);
-                                fflush(stdout);                                     // return the cursor to the right position
-                            }
-                            break;
-
-                case CTRLKEY('N'):
-                case INSERT:insert = !insert;
-//                            Cursor = C_STANDARD + insert;
-                            break;
-
-                case CTRLKEY('U'):
-                case HOME:  if(CharIndex > 0) {
-                                if(CharIndex == strlen(inpbuf)) {
-                                    insert = true;
-//                                    Cursor = C_INSERT;
-                                }
-                                while(CharIndex)  { MMputchar('\b',0); CharIndex--; }
-                                fflush(stdout);
-                            }
-                            break;
-
-                case CTRLKEY('K'):
-                case END:   while(CharIndex < strlen(inpbuf))
-                                MMputchar(inpbuf[CharIndex++],0);
-                                fflush(stdout);
-                            break;
-
-/*            if(c == F2)  tp = "RUN";
-            if(c == F3)  tp = "LIST";
-            if(c == F4)  tp = "EDIT";
-            if(c == F10) tp = "AUTOSAVE";
-            if(c == F11) tp = "XMODEM RECEIVE";
-            if(c == F12) tp = "XMODEM SEND";
-            if(c == F5) tp = Option.F5key;
-            if(c == F6) tp = Option.F6key;
-            if(c == F7) tp = Option.F7key;
-            if(c == F8) tp = Option.F8key;
-            if(c == F9) tp = Option.F9key;*/
-                case 0x91:
-                    break;
-                case 0x92:
-                    strcpy(&buf[1],"RUN\r\n");
-                    break;
-                case 0x93:
-                    strcpy(&buf[1],"LIST\r\n");
-                    break;
-                case 0x94:
-                    strcpy(&buf[1],"EDIT\r\n");
-                    break;
-                case 0x95:
-                    if(*Option.F5key)strcpy(&buf[1],Option.F5key);
-                    break;
-                case 0x96:
-                    if(*Option.F6key)strcpy(&buf[1],Option.F6key);
-                    break;
-                case 0x97:
-                    if(*Option.F7key)strcpy(&buf[1],Option.F7key);
-                    break;
-                case 0x98:
-                    if(*Option.F8key)strcpy(&buf[1],Option.F8key);
-                    break;
-                case 0x99:
-                    if(*Option.F9key)strcpy(&buf[1],Option.F9key);
-                    break;
-                case 0x9a:
-                    strcpy(&buf[1],"AUTOSAVE\r\n");
-                    break;
-                case 0x9b:
-                    strcpy(&buf[1],"XMODEM RECEIVE\r\n");
-                    break;
-                 case 0x9c:
-                    strcpy(&buf[1],"XMODEM SEND\r\n");
-                    break;
-                case CTRLKEY('E'):
-                case UP:    if(!(BufEdited /*|| autoOn || CurrentLineNbr */)) {
-                                while(CharIndex)  { MMputchar('\b',0); CharIndex--; }
-                                fflush(stdout);       // go to the beginning of line
-                                if(lastcmd_edit) {
-                                    i = lastcmd_idx + strlen(&lastcmd[lastcmd_idx]) + 1;    // find the next command
-                                    if(lastcmd[i] != 0 && i < STRINGSIZE*4 - 1) lastcmd_idx = i;  // and point to it for the next time around
-                                } else
-                                    lastcmd_edit = true;
-                                strcpy(inpbuf, &lastcmd[lastcmd_idx]);                      // get the command into the buffer for editing
-                                goto insert_lastcmd;
-                            }
-                            break;
-
-
-                case CTRLKEY('X'):
-                case DOWN:  if(!(BufEdited /*|| autoOn || CurrentLineNbr */)) {
-                                while(CharIndex)  { MMputchar('\b',0); CharIndex--; }
-                                fflush(stdout);      // go to the beginning of line
-                                if(lastcmd_idx == 0)
-                                    *inpbuf = lastcmd_edit = 0;
-                                else {
-                                    for(i = lastcmd_idx - 2; i > 0 && lastcmd[i - 1] != 0; i--);// find the start of the previous command
-                                    lastcmd_idx = i;                                        // and point to it for the next time around
-                                    strcpy(inpbuf, &lastcmd[i]);                            // get the command into the buffer for editing
-                                }
-                                goto insert_lastcmd;                                        // gotos are bad, I know, I know
-                            }
-                            break;
-
-                insert_lastcmd:                                                             // goto here if we are just editing a command
-                            if(strlen(inpbuf) + startline >= maxchars) {                    // if the line is too long
-                                while(CharIndex)  { MMputchar('\b',0); CharIndex--; }         // go to the start of the line
-                                MMPrintString(inpbuf);                                      // display the offending line
-                                error("Line is too long to edit");
-                            }
-                            MMPrintString(inpbuf);                                          // display the line
-                            CharIndex = strlen(inpbuf);                                     // get the current cursor position in the line
-/*                            for(i = 1; i <= maxchars - strlen(inpbuf) - startline; i++) {
-                                MMputchar(' ',0);                                             // erase the rest of the line
-                                CharIndex++;
-                            }
-                            while(CharIndex > strlen(inpbuf)) { MMputchar('\b',0); CharIndex--; } // return the cursor to the right position
-*/
-                            MMPrintString("\033[0K");
-//                            fflush(stdout);
-                            break;
-
-                default:    if(buf[0] >= ' ' && buf[0] < 0x7f) {
-                                BufEdited = true;                                           // this means that something was typed
-                                i = CharIndex;
-                                j = strlen(inpbuf);
-                                if(insert) {
-                                    if(strlen(inpbuf) >= maxchars - 1) break;               // sorry, line full
-                                    for(p = inpbuf + strlen(inpbuf); j >= CharIndex; p--, j--) *(p + 1) = *p;
-                                    inpbuf[CharIndex] = buf[0];                             // insert the char
-                                    MMPrintString(&inpbuf[CharIndex]);                      // display new part of the line
-                                    CharIndex++;
-                                    for(j = strlen(inpbuf); j > CharIndex; j--)
-                                        MMputchar('\b',0);
-                                        fflush(stdout);                                   // return the cursor to the right position
-                                } else {
-                                    inpbuf[strlen(inpbuf) + 1] = 0;                         // incase we are adding to the end of the string
-                                    inpbuf[CharIndex++] = buf[0];                           // overwrite the char
-                                    MMputchar(buf[0],1);                                      // display it
-                                    if(CharIndex + startline >= maxchars) {                 // has the input gone beyond the end of the line?
-                                        MMgetline(0, inpbuf);                               // use the old fashioned way of getting the line
-                                        //if(autoOn && atoi(inpbuf) > 0) autoNext = atoi(inpbuf) + autoIncr;
-                                        goto saveline;
-                                    }
-                                }
-                            }
-                            break;
-            }
-            for(i = 0; i < MAXKEYLEN + 1; i++) buf[i] = buf[i + 1];                             // shuffle down the buffer to get the next char
-        } while(*buf);
-    if(CharIndex == strlen(inpbuf)) {
-        insert = false;
-//        Cursor = C_STANDARD;
-        }
-    }
-
-    saveline:
-//    Cursor = C_STANDARD;
-    MMPrintString("\r\n");
-}
-#endif
 
 #ifdef  USE_FULL_ASSERT
 /**

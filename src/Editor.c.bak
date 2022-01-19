@@ -246,11 +246,11 @@ void FullScreenEditor(void) {
     while(1) {
 		statuscount = 0;
 		do {
-			ShowCursor(true,false);
+			ShowCursor(true);
 			c = MMInkey();
 			if(statuscount++ == 5000) PrintStatus();
 		} while(c == -1);
-		ShowCursor(false,false);
+		ShowCursor(false);
 
 		if(drawstatusline) PrintFunctKeys(EDIT);
 		drawstatusline = false;
@@ -555,7 +555,7 @@ void FullScreenEditor(void) {
 							ClearRuntime();
                             WatchdogSet = false;
                             PrepareProgram(true);
-                            if(Option.ProgFlashSize != PROG_FLASH_SIZE) ExecuteProgram(ProgMemory + Option.ProgFlashSize);       // run anything that might be in the library
+//                            if(PROG_FLASH_SIZE != PROG_FLASH_SIZE) ExecuteProgram(ProgMemory + PROG_FLASH_SIZE);       // run anything that might be in the library
 							nextstmt = ProgMemory;
 							return;
 

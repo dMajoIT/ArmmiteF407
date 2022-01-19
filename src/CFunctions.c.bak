@@ -10,7 +10,8 @@
 #define CFUNCRAM_SIZE   256
 int CFuncRam[CFUNCRAM_SIZE/sizeof(int)];
 
-
+//Vector to CFunction routine called every mSec
+unsigned int CFuncmSec = (unsigned int)NULL;
 extern volatile uint64_t uSecTimer;
 extern volatile uint64_t FastTimer;
 extern TIM_HandleTypeDef htim2;
@@ -23,15 +24,7 @@ extern void routinechecksExternal(void);
 unsigned int CFuncInt1 = (unsigned int)NULL;
 //Vector to CFunction routine called by the interrupt 2 handler
 unsigned int CFuncInt2 = (unsigned int)NULL;
-//Vector to CFunction routine called every mSec
-unsigned int CFuncmSec = (unsigned int)NULL;
-
-//Vector to CSubComplete routine
-//unsigned int CSubComplete = (unsigned int)NULL;
-extern volatile int CSubComplete;
-
-static uint64_t timer(void){ return (__HAL_TIM_GET_COUNTER(&htim2)/84);}
-
+static uint64_t timer(void){ return (__HAL_TIM_GET_COUNTER(&htim2));}
 const void * const CallTable[] __attribute__((section(".cspace")))  = {	(void *)uSec,	//0x00
 																		(void *)putConsole,	//0x04
 																		(void *)getConsole,	//0x08
@@ -62,7 +55,7 @@ const void * const CallTable[] __attribute__((section(".cspace")))  = {	(void *)
 																		(void *)&ReadBuffer,	//0x6c
 																		(void *)&FloatToStr,	//0x70
                                                                         (void *)CallExecuteProgram, //0x74
-                                                                        (void *)&CFuncmSec, //0x78      was CallCFuncmSec,	//0x78
+                                                                        (void *)CallCFuncmSec,	//0x78
                                                                         (void *)CFuncRam,	//0x7c
                                                                         (void *)&ScrollLCD,	//0x80
 																		(void *)IntToFloat, //0x84
@@ -73,9 +66,7 @@ const void * const CallTable[] __attribute__((section(".cspace")))  = {	(void *)
 																		(void *)sin,	//0x98
 																		(void *)DrawCircle,	//0x9c
 																		(void *)DrawTriangle,	//0xa0
-																		(void *)timer,	//0xa4
-																		//(void *)FastTimer,	//0xa4
-																	    (void *)&CSubComplete,	//0xA8
+																		(void *)timer	//0xa4
 									   	   	   	   	   	   	   	   	   	   };
 
 // used by CallCFunction() below to find a CFunction or CSub in program flash or the library
@@ -101,9 +92,6 @@ long long int CallCFunction(char *CmdPtr, char *ArgList, char *DefP, char *Calle
     // find the C code in flash
     if(*ArgList == '(') ArgList++;                                  // and step over it
     p = FindCFunction((unsigned int *)CFunctionFlash, CmdPtr);      // search through the program flash looking for a match to the function being called
-   //  if(*p == 0xffffffff) error("Internal fault 5(sorry)");
-    if(*p == 0xffffffff && CFunctionLibrary != NULL)
-           p = FindCFunction((unsigned int *)CFunctionLibrary, CmdPtr);// if unsuccessful search the library area
     if(*p == 0xffffffff) error("Internal fault 5(sorry)");
 
     // next, get the argument types (if specified)
@@ -130,7 +118,7 @@ long long int CallCFunction(char *CmdPtr, char *ArgList, char *DefP, char *Calle
     CurrentLinePtr = CallersLinePtr;                                // report errors at the caller
     if(*ArgList != ')') {
         getargs(&ArgList, 19, ",");                                 // expand the command line of the caller
-       // if(argc % 2 == 0) error("Syntax");
+        if(argc % 2 == 0) error("Syntax");
         for(i = 0; i < argc; i += 2) {
             // if this is a straight variable we want to pass a pointer to its value in RAM
             if(isnamestart((uint8_t)*argv[i]) && (*skipvar(argv[i], false) == 0 || *skipvar(argv[i], false) == ')') && !(FindSubFun(argv[i], 1) >= 0 && strchr(argv[i], '(') != NULL)) {

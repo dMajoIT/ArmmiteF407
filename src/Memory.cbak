@@ -123,13 +123,14 @@ unsigned int mmap[128];
 
 
 void MIPS16 cmd_memory(void) {
-    int i, j, var, nbr, vsize, VarCnt,pmax;
+    int i, j, var, nbr, vsize, VarCnt;
     int ProgramSize, ProgramPercent, VarSize, VarPercent, GeneralSize, GeneralPercent, SavedVarSize, SavedVarSizeK, SavedVarPercent, SavedVarCnt;
-    int CFunctSize, CFunctSizeK, CFunctNbr, CFunctPercent, FontSize, FontSizeK, FontNbr, FontPercent, LibrarySizeK, LibraryPercent;
+    int CFunctSize, CFunctSizeK, CFunctNbr, CFunctPercent, FontSize, FontSizeK, FontNbr, FontPercent/*, LibrarySizeK, LibraryPercent*/;
     unsigned int CurrentRAM, *pint;
     char *p;
-    pmax=SAVED_VAR_RAM_SIZE;
+
     CurrentRAM = (unsigned int)RAMEND - (unsigned int)RAMBase;
+
     // calculate the space allocated to variables on the heap
     for(i = VarCnt = vsize = var = 0; var < varcnt; var++) {
         if(vartbl[var].type == T_NOTYPE) continue;
@@ -162,8 +163,7 @@ void MIPS16 cmd_memory(void) {
     p = (char *)SAVED_VAR_RAM_ADDR;
     SavedVarCnt = 0;
     while(!(*p == 0 || *p == 0xff)) {
-	unsigned char type, array;
-   	    pmax--;
+        unsigned char type, array;
         SavedVarCnt++;
         type = *p++;
         array = type & 0x80;  type &= 0x7f;                         // set array to true if it is an array
@@ -178,12 +178,10 @@ void MIPS16 cmd_memory(void) {
             else
                 p += *p + 1;
         }
-
-        if(pmax==0)error("Saved Vars RAM corrupt");
     }
     SavedVarSize = p - (char *)SAVED_VAR_RAM_ADDR;
     SavedVarSizeK = (SavedVarSize + 512) / 1024;
-    SavedVarPercent = (SavedVarSize * 100) / (/*PROG_FLASH_SIZE +*/ SAVED_VAR_RAM_SIZE);
+    SavedVarPercent = (SavedVarSize * 100) / (PROG_FLASH_SIZE + SAVED_VAR_RAM_SIZE);
     if(SavedVarCnt && SavedVarSizeK == 0) SavedVarPercent = SavedVarSizeK = 1;        // adjust if it is zero and we have some variables
 
     // count the space used by CFunctions, CSubs and fonts
@@ -201,10 +199,10 @@ void MIPS16 cmd_memory(void) {
         }
         pint += (*pint + 4) / sizeof(unsigned int);
     }
-    CFunctPercent = (CFunctSize * 100) /  (PROG_FLASH_SIZE /* + SAVED_VAR_RAM_SIZE*/);
+    CFunctPercent = (CFunctSize * 100) /  (PROG_FLASH_SIZE + SAVED_VAR_RAM_SIZE);
     CFunctSizeK = (CFunctSize + 512) / 1024;
     if(CFunctNbr && CFunctSizeK == 0) CFunctPercent = CFunctSizeK = 1;              // adjust if it is zero and we have some functions
-    FontPercent = (FontSize * 100) /  (PROG_FLASH_SIZE /* + SAVED_VAR_RAM_SIZE*/);
+    FontPercent = (FontSize * 100) /  (PROG_FLASH_SIZE + SAVED_VAR_RAM_SIZE);
     FontSizeK = (FontSize + 512) / 1024;
     if(FontNbr && FontSizeK == 0) FontPercent = FontSizeK = 1;                      // adjust if it is zero and we have some functions
 
@@ -224,7 +222,7 @@ void MIPS16 cmd_memory(void) {
         while(*p) p++;                                              // look for the zero marking the start of an element
     }
     ProgramSize = ((p - ProgMemory) + 512)/1024;
-    ProgramPercent = ((p - ProgMemory) * 100)/(PROG_FLASH_SIZE /*+ SAVED_VAR_RAM_SIZE*/);
+    ProgramPercent = ((p - ProgMemory) * 100)/(PROG_FLASH_SIZE + SAVED_VAR_RAM_SIZE);
     if(ProgramPercent > 100) ProgramPercent = 100;
     if(i && ProgramSize == 0) ProgramPercent = ProgramSize = 1;                                        // adjust if it is zero and we have some lines
 
@@ -247,7 +245,7 @@ void MIPS16 cmd_memory(void) {
         IntToStr(inpbuf, FontNbr, 10); strcat(inpbuf, " Embedded Fonts"); strcat(inpbuf, FontNbr == 1 ? "\r\n":"s\r\n");
         MMPrintString(inpbuf);
     }
-    /*
+
     if(SavedVarCnt) {
         IntToStrPad(inpbuf, SavedVarSizeK, ' ', 4, 10); strcat(inpbuf, "K (");
         IntToStrPad(inpbuf + strlen(inpbuf), SavedVarPercent, ' ', 2, 10); strcat(inpbuf, "%)");
@@ -255,20 +253,9 @@ void MIPS16 cmd_memory(void) {
         IntToStr(inpbuf + strlen(inpbuf), SavedVarSize, 10); strcat(inpbuf, " bytes)\r\n");
         MMPrintString(inpbuf);
     }
-    */
-    LibrarySizeK = LibraryPercent = 0;
-       if(Option.ProgFlashSize != PROG_FLASH_SIZE) {
-           LibrarySizeK = PROG_FLASH_SIZE - Option.ProgFlashSize;
-           LibraryPercent = (LibrarySizeK * 100)/PROG_FLASH_SIZE;
-           LibrarySizeK /= 1024;
-           IntToStrPad(inpbuf, LibrarySizeK, ' ', 4, 10); strcat(inpbuf, "K (");
-           IntToStrPad(inpbuf + strlen(inpbuf), LibraryPercent, ' ', 2, 10); strcat(inpbuf, "%) "); strcat(inpbuf, "Library\r\n");
-           MMPrintString(inpbuf);
-       }
 
-
-    IntToStrPad(inpbuf, ((PROG_FLASH_SIZE /* + SAVED_VAR_RAM_SIZE*/) + 512)/1024 - ProgramSize - CFunctSizeK - FontSizeK /*- SavedVarSizeK*/ - LibrarySizeK, ' ', 4, 10); strcat(inpbuf, "K (");
-    IntToStrPad(inpbuf + strlen(inpbuf), 100 - ProgramPercent - CFunctPercent - FontPercent /*- SavedVarPercent*/ - LibraryPercent, ' ', 2, 10); strcat(inpbuf, "%) Free\r\n");
+    IntToStrPad(inpbuf, ((PROG_FLASH_SIZE + SAVED_VAR_RAM_SIZE) + 512)/1024 - ProgramSize - CFunctSizeK - FontSizeK - SavedVarSizeK /*- LibrarySizeK*/, ' ', 4, 10); strcat(inpbuf, "K (");
+    IntToStrPad(inpbuf + strlen(inpbuf), 100 - ProgramPercent - CFunctPercent - FontPercent - SavedVarPercent /*- LibraryPercent*/, ' ', 2, 10); strcat(inpbuf, "%) Free\r\n");
 	MMPrintString(inpbuf);
 
     MMPrintString("\r\nRAM:\r\n");
@@ -284,19 +271,6 @@ void MIPS16 cmd_memory(void) {
     IntToStrPad(inpbuf, (CurrentRAM + 512)/1024 - VarSize - GeneralSize, ' ', 4, 10); strcat(inpbuf, "K (");
     IntToStrPad(inpbuf + strlen(inpbuf), 100 - VarPercent - GeneralPercent, ' ', 2, 10); strcat(inpbuf, "%) Free\r\n");
 	MMPrintString(inpbuf);
-
-	 MMPrintString("\r\nBackup SRAM (4K):\r\n");
-	 if(SavedVarCnt) {
-	        IntToStrPad(inpbuf, SavedVarSizeK, ' ', 4, 10); strcat(inpbuf, "K (");
-	        IntToStrPad(inpbuf + strlen(inpbuf), SavedVarPercent, ' ', 2, 10); strcat(inpbuf, "%)");
-	        IntToStrPad(inpbuf + strlen(inpbuf), SavedVarCnt, ' ', 2, 10); strcat(inpbuf, " Saved Variable"); strcat(inpbuf, SavedVarCnt == 1 ? " (":"s (");
-	        IntToStr(inpbuf + strlen(inpbuf), SavedVarSize, 10); strcat(inpbuf, " bytes)\r\n");
-	        MMPrintString(inpbuf);
-	 }
-	 IntToStrPad(inpbuf, (( SAVED_VAR_RAM_SIZE) + 512)/1024 - SavedVarSizeK, ' ', 4, 10); strcat(inpbuf, "K (");
-	 IntToStrPad(inpbuf + strlen(inpbuf), 100 -  SavedVarPercent, ' ', 2, 10); strcat(inpbuf, "%) Free\r\n");
-	 MMPrintString(inpbuf);
-
 }
 
 

@@ -73,7 +73,6 @@ provisions:
 #define CTRL_BARGAUGE       15
 
 #define MAX_PAGES           32          // the number of pages that can be specifies (this must not exceed 32)
-extern void SetBacklight(int intensity);
 extern void cmd_guiMX170(void);
 extern TIM_HandleTypeDef htim1;
 
@@ -2309,25 +2308,21 @@ void fun_mmvpos(void) {
 
 
 void cmd_backlight(void) {
-	    int i;
-	    getargs(&cmdline,3,",");
-	    if(!(argc & 1) || argc == 0) error("Syntax");
-        i=getint(argv[0], 0, 100);
-		//if(HRes != 0){
-			if(argc==3){
-			  if(toupper(*argv[2]) == 'S'){
-				 Option.DefaultBrightness=i;
-				 SaveOptions();
-			  }else if(toupper(*argv[2]) == 'R'){
-				 Option.DefaultBrightness=i+101;
-				 SaveOptions();
-			  }else{
-				error("Syntax");
-			  }
-
-	       }
-		   if(HRes != 0)SetBacklight(i);
-	    //}
+	getargs(&cmdline,3,",");
+	if(argc==3){
+		if(getinteger(argv[2])){
+			htim1.Instance->CCR3=1000-getint(argv[0], 0, 100)*10;
+		} else {
+			htim1.Instance->CCR3=getint(argv[0], 0, 100)*10;
+		}
+	} else {
+		if(HRes != 0 && ((Option.DISPLAY_TYPE >= SSD1963_4 && Option.DISPLAY_TYPE<=SSD_PANEL) || Option.DISPLAY_TYPE==IPS_4_16)){
+			if(Option.DISPLAY_TYPE!=IPS_4_16 && Option.DISPLAY_TYPE!=ILI9341_16)SetBacklightSSD1963(getint(argv[0], 0, 100));
+			htim1.Instance->CCR3=1000-getint(argv[0], 0, 100)*10;
+		} else {
+			htim1.Instance->CCR3=getint(argv[0], 0, 100)*10;
+		}
+	}
 }
 
 void ResetGUI(void) {

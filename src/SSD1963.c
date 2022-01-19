@@ -21,6 +21,7 @@ provisions:
   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 
 ************************************************************************************************************************/
+#include <stdarg.h>
 #include "MMBasic_Includes.h"
 #include "Hardware_Includes.h"
 int ScrollStart;
@@ -32,8 +33,11 @@ int SSD1963VertPulseWidth, SSD1963VertBackPorch, SSD1963VertFrontPorch;
 int SSD1963PClock1, SSD1963PClock2, SSD1963PClock3;
 int SSD1963Mode1, SSD1963Mode2;
 int SSD1963PixelInterface, SSD1963PixelFormat;
+int SSD1963rgb;
 void ScrollSSD1963(int lines);
 unsigned int RDpin,RDport;
+//extern void WriteSSD1963CommandData(unsigned char command, int data, ...);
+extern void SetBacklight(int intensity);
 extern void setscroll4P(int t);
 void PhysicalDrawRect_16(int x1, int y1, int x2, int y2, int c);
 void InitIPS_4_16(void);
@@ -52,6 +56,7 @@ typedef struct
 #define FMC_RBANK1       ((LCD_CONTROLLER_TypeDef *) FMC_RBANK1_BASE)
 extern SRAM_HandleTypeDef hsram1;
 extern int LCD_BL_Period;
+extern int gui_inverse;
 extern void DoBlit(int x1, int y1, int x2, int y2, int w, int h);
 extern TIM_HandleTypeDef htim1;
 
@@ -62,24 +67,32 @@ extern TIM_HandleTypeDef htim1;
 ////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 void ConfigDisplaySSD(char *p) {
+	int DISPLAY_TYPE=0;
     getargs(&p, 9,",");
 //    if((argc & 1) != 1 || argc < 3) error("Argument count");
 	if(checkstring(argv[0], "SSD1963_4_16")) {                         // this is the 4" glass
-		Option.DISPLAY_TYPE = SSD1963_4_16;
+		DISPLAY_TYPE = SSD1963_4_16;
     } else if(checkstring(argv[0], "SSD1963_5_16")) {                  // this is the 5" glass
-        Option.DISPLAY_TYPE = SSD1963_5_16;
+    	DISPLAY_TYPE = SSD1963_5_16;
     } else if(checkstring(argv[0], "SSD1963_5A_16")) {                 // this is the 5" glass alternative version
-        Option.DISPLAY_TYPE = SSD1963_5A_16;
+    	DISPLAY_TYPE = SSD1963_5A_16;
+    } else if(checkstring(argv[0], "SSD1963_5ER_16")) {                 // this is the 5" EastRising RGB is BGR
+       	DISPLAY_TYPE = SSD1963_5ER_16;
     } else if(checkstring(argv[0], "SSD1963_7_16")) {                  // there appears to be two versions of the 7" glass in circulation, this is type 1
-        Option.DISPLAY_TYPE = SSD1963_7_16;
+    	DISPLAY_TYPE = SSD1963_7_16;
     } else if(checkstring(argv[0], "SSD1963_7A_16")) {                 // this is type 2 of the 7" glass (high luminosity version)
-        Option.DISPLAY_TYPE = SSD1963_7A_16;
-    } else if(checkstring(argv[0], "SSD1963_8_16")) {                  // this is the 8" glass (EastRising)
-        Option.DISPLAY_TYPE = SSD1963_8_16;
+       	DISPLAY_TYPE = SSD1963_7A_16;
+    } else if(checkstring(argv[0], "SSD1963_7ER_16")) {                // this is the 7" EastRising RGB is BGR
+       	DISPLAY_TYPE = SSD1963_7ER_16;
+    } else if(checkstring(argv[0], "SSD1963_8_16")) {                  // this is the 8" and 9" glass (EastRising)
+    	DISPLAY_TYPE = SSD1963_8_16;
+
     } else if(checkstring(argv[0], "ILI9341_16")) {
-    	Option.DISPLAY_TYPE = ILI9341_16;
+    	DISPLAY_TYPE = ILI9341_16;
+    } else if(checkstring(argv[0], "ILI9486_16")) {
+    	DISPLAY_TYPE = ILI9486_16;
     } else if(checkstring(argv[0], "IPS_4_16")) {
-        Option.DISPLAY_TYPE = IPS_4_16;	                      /***G.A***/
+    	DISPLAY_TYPE = IPS_4_16;	                      /***G.A***/
     } else
         return;
     if(!(argc == 3 || argc == 5 || argc==7)) error("Argument count");
@@ -96,9 +109,12 @@ void ConfigDisplaySSD(char *p) {
         error("Orientation");
 		
 
+    Option.DISPLAY_TYPE = DISPLAY_TYPE;
+
     // disable the SPI LCD and touch
     Option.TOUCH_CS = Option.TOUCH_IRQ = Option.LCD_CD = Option.LCD_Reset = Option.LCD_CS = Option.TOUCH_Click = 0;
     Option.TOUCH_XZERO = TOUCH_NOT_CALIBRATED;                      // record the touch feature as not calibrated
+    SaveOptions();
     InitDisplaySSD(1);
 }
 
@@ -108,14 +124,15 @@ void ConfigDisplaySSD(char *p) {
 // this is used in the initial boot sequence of the Micromite
 void InitDisplaySSD(int fullinit) {
 
-	if(!((Option.DISPLAY_TYPE >= SSD1963_4 && Option.DISPLAY_TYPE <= SSD_PANEL) || Option.DISPLAY_TYPE==ILI9341_16 || Option.DISPLAY_TYPE==IPS_4_16 ) ) return;
+	if(!((Option.DISPLAY_TYPE >= SSD_PANEL_START && Option.DISPLAY_TYPE <= SSD_PANEL_END) || (Option.DISPLAY_TYPE >= P16_PANEL_START &&  Option.DISPLAY_TYPE <= P16_PANEL_END )) ) return;
 	// ensure Option.SSDspeed is cleared at start.
+	SSD1963rgb=0b0;
 	Option.SSDspeed=0;
 	SaveOptions();
 
     switch(Option.DISPLAY_TYPE) {
         case SSD1963_4_16:
-        case SSD1963_4: DisplayHRes = 480;                                  // this is the 4.3" glass
+                        DisplayHRes = 480;                                  // this is the 4.3" glass
                         DisplayVRes = 272;
                         SSD1963HorizPulseWidth = 41;
                         SSD1963HorizBackPorch = 2;
@@ -131,8 +148,10 @@ void InitDisplaySSD(int fullinit) {
                         SSD1963Mode1 = 0x20;                                // 24-bit for 4.3" panel, data latch in rising edge for LSHIFT
                         SSD1963Mode2 = 0;                                   // Hsync+Vsync mode
                         break;
+        case SSD1963_5ER_16:
+        	           SSD1963rgb=0b1000;
         case SSD1963_5_16:
-        case SSD1963_5: DisplayHRes = 800;                                  // this is the 5" glass
+                        DisplayHRes = 800;                                  // this is the 5" glass
                         DisplayVRes = 480;
                         SSD1963HorizPulseWidth = 128;
                         SSD1963HorizBackPorch = 88;
@@ -149,7 +168,8 @@ void InitDisplaySSD(int fullinit) {
                         SSD1963Mode2 = 0;                                   // Hsync+Vsync mode
                         break;
         case SSD1963_5A_16:
-        case SSD1963_5A: DisplayHRes = 800;                                 // this is a 5" glass alternative version
+
+                        DisplayHRes = 800;                                 // this is a 5" glass alternative version
                         DisplayVRes = 480;
                         SSD1963HorizPulseWidth = 128;
                         SSD1963HorizBackPorch = 88;
@@ -165,8 +185,10 @@ void InitDisplaySSD(int fullinit) {
                         SSD1963Mode1 = 0x24;                                // 24-bit for 5" panel, data latch in falling edge for LSHIFT
                         SSD1963Mode2 = 0;                                   // Hsync+Vsync mode
                         break;
+        case SSD1963_7ER_16:
+                	    SSD1963rgb=0b1000;
         case SSD1963_7_16:
-        case SSD1963_7: DisplayHRes = 800;                                  // this is the 7" glass
+                        DisplayHRes = 800;                                  // this is the 7" glass
                         DisplayVRes = 480;
                         SSD1963HorizPulseWidth = 1;
                         SSD1963HorizBackPorch = 210;
@@ -185,7 +207,7 @@ void InitDisplaySSD(int fullinit) {
                         SSD1963Mode2 = 0x80;                                // TTL mode
                         break;
         case SSD1963_7A_16:
-        case SSD1963_7A: DisplayHRes = 800;                                 // this is a 7" glass alternative version (high brightness)
+                        DisplayHRes = 800;                                 // this is a 7" glass alternative version (high brightness)
                         DisplayVRes = 480;
                         SSD1963HorizPulseWidth = 3;
                         SSD1963HorizBackPorch = 88;
@@ -200,7 +222,7 @@ void InitDisplaySSD(int fullinit) {
                         SSD1963Mode2 = 0x80;                                // TTL mode
                         break;
         case SSD1963_8_16:
-        case SSD1963_8: DisplayHRes = 800;                                  // this is the 8" glass (not documented because the 40 pin connector is non standard)
+                        DisplayHRes = 800;                                  // this is the 8" glass (not documented because the 40 pin connector is non standard)
                         DisplayVRes = 480;
                         SSD1963HorizPulseWidth = 1;
                         SSD1963HorizBackPorch = 210;
@@ -222,18 +244,22 @@ void InitDisplaySSD(int fullinit) {
         	DisplayHRes=320;
 			DisplayVRes=240;
 			break;
+        case ILI9486_16:
+               	DisplayHRes=480;
+       			DisplayVRes=320;
+       			break;
         case IPS_4_16:                                              /***G.A***/
             DisplayHRes=800;
        		DisplayVRes=480;
        		break;
     }
-    if(Option.DISPLAY_TYPE > SSD_PANEL_8){
+   // if(Option.DISPLAY_TYPE > SSD_PANEL_8){
         SSD1963PixelInterface=3; //PIXEL data interface - 16-bit RGB565
         SSD1963PixelFormat=0b01010000; //PIXEL data interface RGB565
-    } else {
-        SSD1963PixelInterface=0; //PIXEL data interface - 8-bit
-        SSD1963PixelFormat=0b01110000;	//PIXEL data interface 24-bit
-    }
+   // } else {
+   //     SSD1963PixelInterface=0; //PIXEL data interface - 8-bit
+   //     SSD1963PixelFormat=0b01110000;	//PIXEL data interface 24-bit
+   // }
     if(fullinit){
         if(DISPLAY_LANDSCAPE) {
             VRes=DisplayVRes;
@@ -250,50 +276,28 @@ void InitDisplaySSD(int fullinit) {
         DrawBitmap = DrawBitmapSSD1963_16;
         ReadBuffer=ReadBufferSSD1963_16;
 
-        if(Option.DISPLAY_TYPE == ILI9341_16 || Option.DISPLAY_TYPE == IPS_4_16){
+        if(Option.DISPLAY_TYPE == ILI9341_16 || Option.DISPLAY_TYPE == ILI9486_16 || Option.DISPLAY_TYPE == IPS_4_16){
                        	 ScrollLCD = ScrollILI9341;
         }
 
-
-#ifdef NotRequired
-        if(Option.DISPLAY_TYPE==SSD1963_4_16){
-            DrawBuffer=DrawBufferSSD1963_16;
-            DrawBitmap = DrawBitmapSSD1963_16;
-            ReadBuffer=ReadBufferSSD1963_16;
-        } else if(Option.DISPLAY_TYPE == ILI9341_16){
-            DrawBuffer=DrawBufferSSD1963_16;
-            DrawBitmap = DrawBitmapSSD1963_16;
-            ReadBuffer=ReadBufferSSD1963_16;
-            ScrollLCD = ScrollILI9341;
-        } else if(Option.DISPLAY_TYPE == IPS_4_16){
-            DrawBuffer=DrawBufferSSD1963_16;
-            DrawBitmap = DrawBitmapSSD1963_16;
-            ReadBuffer=ReadBufferSSD1963_16;
-            ScrollLCD = ScrollILI9341;       /***G.A***/
-        } else if(Option.DISPLAY_TYPE > SSD_PANEL_8){
-            DrawBuffer=DrawBufferSSD1963_16;
-            DrawBitmap = DrawBitmapSSD1963_16;
-            ReadBuffer=ReadBufferSSD1963_16;
-        }
-#endif
-
-        if(Option.DISPLAY_CONSOLE)SetFont(Option.DefaultFont); // font 7 scale 1 is 0x61 ie. (7-1)<<4|1
-        else SetFont((Option.DISPLAY_TYPE == ILI9341_16 ? 0x61: 1)); // font 7 scale 1 is 0x61 ie. (7-1)<<4|1
+        //SetFont((Option.DISPLAY_TYPE == ILI9341_16 ? 0x61: 1)); // font 7 scale 1 is 0x61 ie. (7-1)<<4|1
+       //Always default the ILI9341_16 to use small font 7 unless it already configured as a console.
+      // if( Option.DISPLAY_CONSOLE == 0 && Option.DISPLAY_TYPE == ILI9341_16){
+    	//   SetFont( 0x61); // font 7 scale 1 is 0x61 ie. (7-1)<<4|1
+       //}else{
+    	//   SetFont(((Option.DefaultFont-1)<<4) | 1);
+       //}
+        if(Option.DISPLAY_CONSOLE)SetFont(((Option.DefaultFont-1)<<4) | 1); // font 7 scale 1 is 0x61 ie. (7-1)<<4|1
+         else SetFont((Option.DISPLAY_TYPE == ILI9341_16 ? 0x61: 1)); // font 7 scale 1 is 0x61 ie. (7-1)<<4|1
         PromptFont = gui_font;
         PromptFC = gui_fcolour = Option.DefaultFC;
         PromptBC = gui_bcolour = Option.DefaultBC;
     }
-    if(Option.DISPLAY_TYPE == ILI9341_16) InitILI9341();
+    if(Option.DISPLAY_TYPE == ILI9341_16 || Option.DISPLAY_TYPE == ILI9486_16  ) InitILI9341();
     else if(Option.DISPLAY_TYPE == IPS_4_16) InitIPS_4_16();
     else InitSSD1963();
-	Option.DefaultBrightness = 100;
-	if(Option.DISPLAY_TYPE >= SSD1963_4 && Option.DISPLAY_TYPE<=SSD_PANEL){
-		SetBacklightSSD1963(Option.DefaultBrightness);
-	}else if(Option.DISPLAY_TYPE==IPS_4_16){
-		htim1.Instance->CCR3=1000-Option.DefaultBrightness*10;
-	} else {
-		htim1.Instance->CCR3=Option.DefaultBrightness*10;
-	}
+
+    SetBacklight(Option.DefaultBrightness);
     ResetDisplay();
 }
 
@@ -306,33 +310,28 @@ void InitDisplaySSD(int fullinit) {
 // Write a command byte to the SSD1963
 void WriteSSD1963Command(int cmd) {
 	  /* Write 16-bit Index, then write register */
-	  FMC_BANK1->REG = cmd;
-	  __DSB();
+	  FMC_BANK1->REG = cmd; __DSB();
 }
 
-// Slowly write a command byte to the SSD1963
-//void WriteSSD1963CommandSlow(int cmd) {
-	  /* Write 16-bit Index, then write register */
-//	  FMC_BANK1->REG = cmd;
-//	  __DSB();
-//}
 
 // Write an 8 bit data word to the SSD1963
 void WriteDataSSD1963(int data) {
 	  /* Write 16-bit Reg */
-	  FMC_RBANK1->RAM = data;
-	  __DSB();
+	  FMC_RBANK1->RAM = data; __DSB();
+}
+
+void WriteSSD1963CommandData(unsigned char cmd, int data, ...){
+	   int i;
+	   va_list ap;
+	   va_start(ap, data);
+	   FMC_BANK1->REG = cmd; __DSB();
+	   for(i = 0; i < data; i++){
+	     FMC_RBANK1->RAM =va_arg(ap, int); __DSB();
+       }
+	   va_end(ap);
 }
 
 
-
-
-//Slowly write an 8 bit data word to the SSD1963
-//void WriteDataSSD1963Slow(int data) {
-	  /* Write 16-bit Reg */
-//	  FMC_RBANK1->RAM = data;
-//	  __DSB();
-//}
 
 // Write sequential 16 bit command with the same 16 bit data word n times to the IPS_4_16
 void WriteCmdDataIPS_4_16(int cmd,int n,int data) {
@@ -367,18 +366,6 @@ unsigned int ReadColor(void) {
 unsigned int ReadData(void) {
 	return FMC_RBANK1->RAM;
 }
-
-// Read RGB colour over an 8 bit bus, first pixel
-//unsigned int ReadColorSlow(void) {
-//	int c;
-//	c=(FMC_RBANK1->RAM & 0xFF)<<16;
-//	c|=(FMC_RBANK1->RAM & 0xFF)<<8;
-//	c|=(FMC_RBANK1->RAM & 0xFF);
-//	return c;
-//}
-//// The next two functions are used in the initial setup where the SSD1963 cannot respond to fast signals
-
-
 
 
 /*********************************************************************
@@ -490,9 +477,12 @@ static void GPIO_WR(int pin, int state) {
 * Note: The base frequency of PWM set to around 300Hz with PLL set to 120MHz.
 *		This parameter is hardware dependent
 ********************************************************************/
+//void SetBacklightSSD1963(int intensity) {
+//	WriteSSD1963CommandData(CMD_SET_PWM_CONF,6,0x0e,(intensity * 255)/100,0x01,0x00,0x00,0x00);
+//	display_backlight = intensity/5;                                // this is used in timer.c
+//}
 void SetBacklightSSD1963(int intensity) {
 	WriteSSD1963Command(CMD_SET_PWM_CONF);                                 // Set PWM configuration for backlight control
-
 	WriteDataSSD1963(0x0E);                                                // PWMF[7:0] = 2, PWM base freq = PLL/(256*(1+5))/256 = 300Hz for a PLL freq = 120MHz
 	WriteDataSSD1963((intensity * 255)/100);                               // Set duty cycle, from 0x00 (total pull-down) to 0xFF (99% pull-up , 255/256)
 	WriteDataSSD1963(0x01);                                                // PWM enabled and controlled by host (mcu)
@@ -500,7 +490,8 @@ void SetBacklightSSD1963(int intensity) {
 	WriteDataSSD1963(0x00);
 	WriteDataSSD1963(0x00);
 
-    display_backlight = intensity/5;                                // this is used in timer.c
+   // display_backlight = intensity/5;                                // this is used in timer.c
+
 }
 
 /*********************************************************************
@@ -530,104 +521,301 @@ void SetTearingCfg(int state, int mode)
 * Function:  void InitVideo()
 * Resets LCD, Initialize IO ports, initialize SSD1963 for PCLK,	HSYNC, VSYNC etc
 ***********************************************************************************************************************************/
-	void InitILI9341(void){
-		DisplayHRes = 320;
-		DisplayVRes = 240;
-		WriteSSD1963Command(0xCB);
-		WriteDataSSD1963(0x39);
-		WriteDataSSD1963(0x2C);
-		WriteDataSSD1963(0x00);
-		WriteDataSSD1963(0x34);
-		WriteDataSSD1963(0x02);
+// initialization commands and arguments are organized in these tables
+// storage-wise this is  more compact than the equivalent code.
+// Companion function follows.
 
-		WriteSSD1963Command(0xCF);
-		WriteDataSSD1963(0x00);
-		WriteDataSSD1963(0XC1);
-		WriteDataSSD1963(0X30);
+#define DELAY 0x80  //Bit7 of the count indicates a delay is also added.
+#define REPEAT 0x40  //Bit6 of the count indicates same data is repeated instead of reading next byte.
+// First byte is the number of commands
+// Second byte is command type 0= B7-B0 as 8bit command  8=single byte shifted to B15-B8 as 16bit command 2= two bytes needed
+static const uint8_t
+ILI9486_16Init[] = {   // Initialization commands for ILI9486-16 screen
+	    15,            // no of commands in list:
+		0,             // 0= B7-B0 as 8bit command  8=single byte shifted to B15-B8 as 16bit command 2= two bytes needed
 
-		WriteSSD1963Command(0xE8);
-		WriteDataSSD1963(0x85);
-		WriteDataSSD1963(0x00);
-		WriteDataSSD1963(0x78);
+		0x01,DELAY,100,                           // uSec( 100000); // software reset 100ms pause
+		0x28,0, // display off
+        0xF1,6,0x36,0x04,0x00,0x3c,0x0f,0x8f,
+        0xF2,9,0x18,0xa3,0x12,0x02,0xb2,0x12,0xff,0x10,0x00,
+        0xf8,2,0x21,0x04,
+        0xf9,2,0x00,0x08,
+        0xb4,1,0x00,
+        0xc1,1,0x47,
+        0xC5,4,0x00,0xaf,0x80,0x00,
+        0xe0,15,0x0f,0x1f,0x1c,0x0c,0x0f,0x08,0x48,0x98,0x37,0x0a,0x13,0x04,0x11,0x0d,0x00,
 
-		WriteSSD1963Command(0xEA);
-		WriteDataSSD1963(0x00);
-		WriteDataSSD1963(0x00);
+		0xe1,15,0x0f,0x32,0x2e,0x0b,0x0d,0x05,0x47,0x75,0x37,0x06,0x10,0x03,0x24,0x20,0x00,
+        0x34,0,                                     //Tearing Effect Off
+        0x3A,1,0x66,                                // Pixel Interface Format // 18 bit colour for SPI
+        0x11,DELAY,150,                             //uSec( 150000);
+        0x29,DELAY,255                              //uSec(500000);
+};
 
-		WriteSSD1963Command(0xED);
-		WriteDataSSD1963(0x64);
-		WriteDataSSD1963(0x03);
-		WriteDataSSD1963(0X12);
-		WriteDataSSD1963(0X81);
 
-		WriteSSD1963Command(0xF7);
-		WriteDataSSD1963(0x20);
 
-		WriteSSD1963Command(0xC0);    //Power control
-		WriteDataSSD1963(0x23);   //VRH[5:0]
+static const uint8_t
+ILI9341_16Init[] = {   // Initialization commands for ILI9486-16 screen
+	    17,            // no of commands in list:
+		0,             // 0= B7-B0 as 8bit command  8=single byte shifted to B15-B8 as 16bit command 2= two bytes needed
 
-		WriteSSD1963Command(0xC1);    //Power control
-		WriteDataSSD1963(0x10);   //SAP[2:0];BT[3:0]
+		0xCB,5,0x39,0x2c,0x00,0x34,0x02,
+		0xCF,3,0x00,0xc1,0x30,
+		0xE8,3,0x85,0x00,0x78,
+		0xEA,2,0x00,0x00,
+		0xED,4,0x64,0x03,0x12,0x81,
+		0xF7,1,0x20,
+		0xC0,1,0x23,            //Power control  //VRH[5:0]
+		0xC1,1,0x10,            //Power control   //SAP[2:0];BT[3:0]
+		0xC5,2,0x3e,0x28,       //VCM control //Contrast
+		0xC7,1,0x86,            //VCM control2
 
-		WriteSSD1963Command(0xC5);    //VCM control
-		WriteDataSSD1963(0x3e);   //Contrast
-		WriteDataSSD1963(0x28);
+		0x3A,1,0x66,            // 55= RGB565 66=RGB666
+		0xB1,2,0x00,0x18,
+		0xB6,3,0x08,0x82,0x27, // Display Function Control
+		0xF2,1,0x00,           // 3Gamma Function Disable
+		0x26,1,0x01,           //Gamma curve selected
+		0xe0,15,0x0f,0x31,0x2b,0x0c,0x0e,0x08,0x4e,0xf1,0x37,0x07,0x10,0x03,0x0e,0x09,0x00, //Set Gamma
+		0xe1,15,0x00,0x0e,0x14,0x03,0x11,0x07,0x31,0xc1,0x48,0x08,0x0f,0x0c,0x31,0x36,0x0f  //Set Gamma
+};
 
-		WriteSSD1963Command(0xC7);    //VCM control2
-		WriteDataSSD1963(0x86);   //--
 
-		WriteSSD1963Command(0x3A);
-		WriteDataSSD1963(0x66);  // 55= RGB565 66=RGB666
+static const uint8_t
+NT35510_16Init[] = {   // Initialization commands for ILI9486-16 screen
+	    36,            // no of commands in list:
+		1,             // 0= B7-B0 as 8bit command  8=single byte shifted to B15-B8 as 16bit command 2= two bytes needed
 
-		WriteSSD1963Command(0xB1);
-		WriteDataSSD1963(0x00);
-		WriteDataSSD1963(0x18);
+		0xF0,5,0x55,0xAA,0x52,0x08,0x01,
+		0xB6,REPEAT+3,0x34,//0x34,0x34,
+		0xB0,REPEAT+3,0x0D,//0x0D,0x0D,
+		0xB7,REPEAT+3,0x24,//0x24,0x24,
+		0xB1,REPEAT+3,0x0D,//0x0D,0x0D,
+		0xB8,REPEAT+3,0x24,//0x24,0x24,
+		0xB2,1,0x00,
+		0xB9,REPEAT+3,0x24,//0x24,0x24,
+		0xB3,REPEAT+3,0x05,//0x05,0x05,
+		0xBF,1,0x01,
 
-		WriteSSD1963Command(0xB6);    // Display Function Control
-		WriteDataSSD1963(0x08);
-		WriteDataSSD1963(0x82);
-		WriteDataSSD1963(0x27);
+		0xBA,REPEAT+3,0x34,//0x34,0x34,
+		0xB5,REPEAT+3,0x0B,//0x0B,0x0B,
+		0xBC,3,0x00,0xA3,0x00,
+		0xBD,3,0x00,0xA3,0x00,
+		0xBE,2,0x00,0x63,
+		0xD1,52,
+			0x00,0x37,0x00,0x52,0x00,0x7B,0x00,0x99,0x00,0xB1,0x00,0xD2,0x00,0xF6,0x01,0x27,
+			0x01,0x4E,0x01,0x8C,0x01,0xBE,0x02,0x0B,0x02,0x48,0x02,0x4A,0x02,0x7E,0x02,0xBC,
+			0x02,0xE1,0x03,0x10,0x03,0x31,0x03,0x5A,0x03,0x73,0x03,0x94,0x03,0x9F,0x03,0xB3,
+			0x03,0xB9,0x03,0xC1,
 
-		WriteSSD1963Command(0xF2);    // 3Gamma Function Disable
-		WriteDataSSD1963(0x00);
+		0xD2,52,
+			0x00,0x37,0x00,0x52,0x00,0x7B,0x00,0x99,0x00,0xB1,0x00,0xD2,0x00,0xF6,0x01,0x27,
+			0x01,0x4E,0x01,0x8C,0x01,0xBE,0x02,0x0B,0x02,0x48,0x02,0x4A,0x02,0x7E,0x02,0xBC,
+			0x02,0xE1,0x03,0x10,0x03,0x31,0x03,0x5A,0x03,0x73,0x03,0x94,0x03,0x9F,0x03,0xB3,
+			0x03,0xB9,0x03,0xC1,
 
-		WriteSSD1963Command(0x26);    //Gamma curve selected
-		WriteDataSSD1963(0x01);
+		0xD3,52,
+			0x00,0x37,0x00,0x52,0x00,0x7B,0x00,0x99,0x00,0xB1,0x00,0xD2,0x00,0xF6,0x01,0x27,
+			0x01,0x4E,0x01,0x8C,0x01,0xBE,0x02,0x0B,0x02,0x48,0x02,0x4A,0x02,0x7E,0x02,0xBC,
+			0x02,0xE1,0x03,0x10,0x03,0x31,0x03,0x5A,0x03,0x73,0x03,0x94,0x03,0x9F,0x03,0xB3,
+			0x03,0xB9,0x03,0xC1,
 
-		WriteSSD1963Command(0xE0);    //Set Gamma
-		WriteDataSSD1963(0x0F);
-		WriteDataSSD1963(0x31);
-		WriteDataSSD1963(0x2B);
-		WriteDataSSD1963(0x0C);
-		WriteDataSSD1963(0x0E);
-		WriteDataSSD1963(0x08);
-		WriteDataSSD1963(0x4E);
-		WriteDataSSD1963(0xF1);
-		WriteDataSSD1963(0x37);
-		WriteDataSSD1963(0x07);
-		WriteDataSSD1963(0x10);
-		WriteDataSSD1963(0x03);
-		WriteDataSSD1963(0x0E);
-		WriteDataSSD1963(0x09);
-		WriteDataSSD1963(0x00);
+		0xD4,52,
+			0x00,0x37,0x00,0x52,0x00,0x7B,0x00,0x99,0x00,0xB1,0x00,0xD2,0x00,0xF6,0x01,0x27,
+			0x01,0x4E,0x01,0x8C,0x01,0xBE,0x02,0x0B,0x02,0x48,0x02,0x4A,0x02,0x7E,0x02,0xBC,
+			0x02,0xE1,0x03,0x10,0x03,0x31,0x03,0x5A,0x03,0x73,0x03,0x94,0x03,0x9F,0x03,0xB3,
+			0x03,0xB9,0x03,0xC1,
 
-		WriteSSD1963Command(0XE1);    //Set Gamma
-		WriteDataSSD1963(0x00);
-		WriteDataSSD1963(0x0E);
-		WriteDataSSD1963(0x14);
-		WriteDataSSD1963(0x03);
-		WriteDataSSD1963(0x11);
-		WriteDataSSD1963(0x07);
-		WriteDataSSD1963(0x31);
-		WriteDataSSD1963(0xC1);
-		WriteDataSSD1963(0x48);
-		WriteDataSSD1963(0x08);
-		WriteDataSSD1963(0x0F);
-		WriteDataSSD1963(0x0C);
-		WriteDataSSD1963(0x31);
-		WriteDataSSD1963(0x36);
-		WriteDataSSD1963(0x0F);
+		0xD5,52,
+			0x00,0x37,0x00,0x52,0x00,0x7B,0x00,0x99,0x00,0xB1,0x00,0xD2,0x00,0xF6,0x01,0x27,
+			0x01,0x4E,0x01,0x8C,0x01,0xBE,0x02,0x0B,0x02,0x48,0x02,0x4A,0x02,0x7E,0x02,0xBC,
+			0x02,0xE1,0x03,0x10,0x03,0x31,0x03,0x5A,0x03,0x73,0x03,0x94,0x03,0x9F,0x03,0xB3,
+			0x03,0xB9,0x03,0xC1,
 
+
+		0xD6,52,
+			0x00,0x37,0x00,0x52,0x00,0x7B,0x00,0x99,0x00,0xB1,0x00,0xD2,0x00,0xF6,0x01,0x27,
+			0x01,0x4E,0x01,0x8C,0x01,0xBE,0x02,0x0B,0x02,0x48,0x02,0x4A,0x02,0x7E,0x02,0xBC,
+			0x02,0xE1,0x03,0x10,0x03,0x31,0x03,0x5A,0x03,0x73,0x03,0x94,0x03,0x9F,0x03,0xB3,
+			0x03,0xB9,0x03,0xC1,
+
+
+		0xF0,5,0x55,0xAA,0x52,0x08,0x00,
+		0xB0,5,0x08,0x05,0x02,0x05,0x02,
+		0xB6,1,0x08,
+		0xB5,1,0x50,  //480x800
+		0xB7,2,0x00,0x00,
+		0xB8,4,0x01,0x05,0x05,0x05,
+		0xBC,3,0x00,0x00,0x00,
+		0xCC,3,0x03,0x00,0x00,
+		0xBD,5,0x01,0x84,0x07,0x31,0x00,
+
+		0xBA,1,0x01,
+		0xFF,4,0xAA,0x55,0x25,0x01,
+		0x35,1,0x00,
+		0x3A,1,0x66,    // 55=Colour 565 66=Colour 666 77=Colour 888
+		0x11,DELAY,100,   // uSec( 100000);//delay(100);
+		0x29,DELAY,100    // uSec( 100000);//delay(50);
+};
+
+static const uint8_t
+OTM8009A_16Init[] = {   // Initialization commands for OTM8009A_16 screen
+	    51,            // no of commands in list:
+		2,             // 0= B7-B0 as 8bit command  8=single byte shifted to B15-B8 as 16bit command 2= two bytes needed
+
+		0xff,0x00,3,0x80,0x09,0x01, //enable access command2
+		0xff,0x80,2,0x80,0x09, //enable access command2
+		0xff,0x03,1,0x01,  //DON?T KNOW ???
+		0xc5,0xb1,1,0xA9, //power control
+		0xc5,0x91,1,0x0F, //power control
+		0xc0,0xB4,1,0x50,
+		0xE1,0x00,16,0x00,0x09,0x0F,0x0E,0x07,0x10,0x0B,0x0A,0x04,0x07,0x0B,0x08,0x0F,0x10,0x0A,0x01,
+		0xE2,0x00,16,0x00,0x09,0x0F,0x0E,0x07,0x10,0x0B,0x0A,0x04,0x07,0x0B,0x08,0x0F,0x10,0x0A,0x01,
+	    0xD9,0x00,1,0x4E,      /* VCOM Voltage Setting */
+		0xc1,0x81,1,0x66,      //osc=65HZ
+
+		0xc1,0xa1,1,0x08,      //RGB Video Mode Setting
+		0xc5,0x92,1,0x01,      //power control
+		0xc5,0x95,1,0x34,      //power control
+		0xd8,0x00,2,0x79,0x79, //GVDD / NGVDD setting
+		0xc5,0x94,1,0x33, //power control
+		0xc0,0xa3,1,0x1B,//panel timing setting
+		0xc5,0x82,1,0x83, //power control
+		0xc4,0x81,1,0x83,  //source driver setting
+		0xc1,0xa1,1,0x0E,
+		0xb3,0xa6,2,0x20,0x01,
+
+		0xce,0x80,6,0x85,0x01,0x00,0x84,0x01,0x00,  // GOA VST
+		0xce,0xa0,7,0x18,0x04,0x03,0x39,0x00,0x00,0x00,
+		0xce,0xa7,7,0x18,0x03,0x03,0x3a,0x00,0x00,0x00,
+		0xce,0xb0,14,0x18,0x02,0x03,0x3b,0x00,0x00,0x00,0x18,0x01,0x03,0x3c,0x00,0x00,0x00,
+		0xcf,0xc0,10,0x01,0x01,0x20,0x20,0x00,0x00,0x01,0x00,0x00,0x00,
+		0xcf,0xd0,1,0x00,
+		0xcb,0x80,REPEAT+10,0x00,
+		0xcb,0x90,REPEAT+15,0x00,
+		0xcb,0xa0,REPEAT+15,0x00,
+		0xcb,0xb0,REPEAT+10,0x00,
+
+		0xcb,0xc0,1,0x00,
+		0xcb,0xc1,REPEAT+5,0x04,
+		0xcb,0xc6,REPEAT+9,0x00,
+		0xcb,0xd0,REPEAT+6,0x00,
+		0xcb,0xd6,REPEAT+5,0x04,
+		0xcb,0xdb,REPEAT+4,0x00,
+		0xcb,0xe0,REPEAT+10,0x00,
+		0xcb,0xf0,REPEAT+10,0xff,
+		0xcc,0x80,10,0x00,0x26,0x09,0x0B,0x01,0x25,0x00,0x00,0x00,0x00,
+		0xcc,0x90,REPEAT+11,0x00,
+
+		0xcc,0x9b,4,0x26,0x0A,0x0C,0x02,
+		0xcc,0xa0,1,0x25,
+		0xcc,0xa1,REPEAT+14,0x00,
+		0xcc,0xb0,10,0x00,0x25,0x0c,0x0a,0x02,0x26,0x00,0x00,0x00,0x00,
+		0xcc,0xc0,REPEAT+11,0x00,
+		0xcc,0xcb,4,0x25,0x0B,0x09,0x01,
+		0xcc,0xd0,1,0x26,
+		0xcc,0xd1,REPEAT+14,0x00,
+		0x3A,0x00,1,0x55,
+		0x11,0x00,DELAY,100,
+
+		0x29,0x00,DELAY,100
+
+};
+
+// Companion code to the above tables.  Reads and issues
+// a series of LCD commands.
+//command types
+//   0= B7-B0 as 8bit command - command is not repeated for each subsequent byte of data. LCDPanel acepts multiple data bytes with each commande
+//   1=single byte shifted to B15-B8 as 16bit command -command incremented and sent with each new data byte
+//   2= two command bytes read to fill B15-B0 as 16bit command - command incremented and sent with each new data byte
+void static SendCommand16Block(const uint8_t *addr) {
+   uint8_t numCommands, numArgs,cmdType,numReps;
+   uint16_t ms,cmd;
+   numCommands = *(addr++);           // Number of commands to follow
+   cmdType = *(addr++);               // Number of commands to follow
+   while(numCommands--) {                 // For each command...
+	 if (cmdType==2){
+		 cmd  = (*(addr++)<<8);
+         cmd |= *(addr++);
+	 }else if (cmdType==1){
+		 cmd  = (*(addr++)<<8);
+	 }else{ //cmdType==0
+		 cmd = *(addr++);
+		 WriteSSD1963Command(cmd) ;        //   Read, issue command and increment address
+	 }
+	 numArgs  = *(addr++);                //   Number of args to follow
+	 ms       = numArgs & DELAY;          //   If hibit set, delay follows args
+     numArgs &= ~DELAY;                   //   Mask out delay bit
+     numReps  = numArgs & REPEAT;         //   If B6 set then repeat same byte for numArgs
+     numArgs &= ~REPEAT;                   //   Mask out repeat bit
+     if (numArgs==0 && cmdType!=0){WriteSSD1963Command(cmd++) ;}
+     while(numArgs--) { //   For each argument...
+       if (numReps){
+    	   if(cmdType!=0){WriteSSD1963Command(cmd++) ; }
+    	   WriteDataSSD1963(*(addr));         //     Read, issue argument DONT step address
+       }else{
+    	   if(cmdType!=0){WriteSSD1963Command(cmd++) ; }
+    	   WriteDataSSD1963(*(addr++));         //  Read, issue argument step address
+       }
+     }
+     if (numReps){addr++;}                //move pointer to next value
+     if(ms) {
+       ms = *(addr++);                    // Read post-command delay time (ms)
+       if(ms == 255) ms = 500;            // If 255, delay for 500 ms
+         uSec(ms*1000);                   //convert to uS
+     }
+   }
+}
+
+
+
+void InitILI9341(void){
+
+
+ if(Option.DISPLAY_TYPE ==  ILI9486_16)	{
+	        SendCommand16Block(ILI9486_16Init);
+			//ILI9486 initialisation
+	        /*
+			WriteSSD1963Command(0x01); uSec( 100000); // software reset 100ms pause
+			WriteSSD1963Command(0x28); // display off
+			WriteSSD1963CommandData(0xF1,6,0x36,0x04,0x00,0x3c,0x0f,0x8f);
+			WriteSSD1963CommandData(0xF2,9,0x18,0xa3,0x12,0x02,0xb2,0x12,0xff,0x10,0x00);
+			WriteSSD1963CommandData(0xf8,2,0x21,0x04);
+			WriteSSD1963CommandData(0xf9,2,0x00,0x08);
+			WriteSSD1963CommandData(0xb4,1,0x00);
+			WriteSSD1963CommandData(0xc1,1,0x47);
+			WriteSSD1963CommandData(0xC5,4,0x00,0xaf,0x80,0x00);
+			WriteSSD1963CommandData(0xe0,15,0x0f,0x1f,0x1c,0x0c,0x0f,0x08,0x48,0x98,0x37,0x0a,0x13,0x04,0x11,0x0d,0x00);//Set Gamma
+			WriteSSD1963CommandData(0xe1,15,0x0f,0x32,0x2e,0x0b,0x0d,0x05,0x47,0x75,0x37,0x06,0x10,0x03,0x24,0x20,0x00); //Set Gamma
+			WriteSSD1963Command(0x34); //Tearing Effect Off
+			WriteSSD1963CommandData(0x3A,1,0x66);// 55= RGB565 66=RGB666
+			WriteSSD1963Command(0x11);uSec( 150000);
+			WriteSSD1963Command(0x29);uSec( 500000);
+            */
+	 } else {
+
+		//ILI9341_16 Initialisation
+		 SendCommand16Block(ILI9341_16Init);
+		 /*
+		WriteSSD1963CommandData(0xCB,5,0x39,0x2c,0x00,0x34,0x02);
+		WriteSSD1963CommandData(0xCF,3,0x00,0xc1,0x30);
+		WriteSSD1963CommandData(0xE8,3,0x85,0x00,0x78);
+		WriteSSD1963CommandData(0xEA,2,0x00,0x00);
+		WriteSSD1963CommandData(0xED,4,0x64,0x03,0x12,0x81);
+		WriteSSD1963CommandData(0xF7,1,0x20);
+		WriteSSD1963CommandData(0xC0,1,0x23);    //Power control  //VRH[5:0]
+		WriteSSD1963CommandData(0xC1,1,0x10);    //Power control   //SAP[2:0];BT[3:0]
+		WriteSSD1963CommandData(0xC5,2,0x3e,0x28);    //VCM control //Contrast
+		WriteSSD1963CommandData(0xC7,1,0x86);    //VCM control2
+		WriteSSD1963CommandData(0x3A,1,0x66); // 55= RGB565 66=RGB666
+		WriteSSD1963CommandData(0xB1,2,0x00,0x18);
+		WriteSSD1963CommandData(0xB6,3,0x08,0x82,0x27); // Display Function Control
+		WriteSSD1963CommandData(0xF2,1,0x00);    // 3Gamma Function Disable
+		WriteSSD1963CommandData(0x26,1,0x01);    //Gamma curve selected
+		WriteSSD1963CommandData(0xe0,15,0x0f,0x31,0x2b,0x0c,0x0e,0x08,0x4e,0xf1,0x37,0x07,0x10,0x03,0x0e,0x09,0x00);//Set Gamma
+		WriteSSD1963CommandData(0xe1,15,0x00,0x0e,0x14,0x03,0x11,0x07,0x31,0xc1,0x48,0x08,0x0f,0x0c,0x31,0x36,0x0f); //Set Gamma
+		*/
+
+	 }
 		uSec(120000);
 		int i=0;
 		switch(Option.DISPLAY_ORIENTATION) {
@@ -645,7 +833,7 @@ void SetTearingCfg(int state, int mode)
 		ClearScreen(Option.DefaultBC);
 }
 // ----------- OTM8009A ad NT35510 Initialisation  -- Always uses 16bit commands
-	void InitIPS_4_16(void){
+void InitIPS_4_16(void){
         int t=0;
 		GPIO_WR(LCD_RESET,1);
 		uSec(50000);
@@ -657,1431 +845,19 @@ void SetTearingCfg(int state, int mode)
 		WriteSSD1963Command(0xDA00);
 		t=FMC_RBANK1->RAM ; // dummy read
 		t=FMC_RBANK1->RAM ; // read id
-#ifdef debug
-		MMPrintString("ID1=");PIntH(t);MMPrintString("\r\n");
-
-
-		      // NT35510 IPS Display
-	            Option.SSDspeed = 1;
-	            SaveOptions();
-				WriteCmdDataIPS_4_16(0xF000,1,0x55);
-				WriteCmdDataIPS_4_16(0xF001,1,0xAA);
-				WriteCmdDataIPS_4_16(0xF002,1,0x52);
-				WriteCmdDataIPS_4_16(0xF003,1,0x08);
-				WriteCmdDataIPS_4_16(0xF004,1,0x01);
-				//#AVDD:manual,1,
-				WriteCmdDataIPS_4_16(0xB600,3,0x34);
-				//WriteCmdDataIPS_4_16(0xB601,1,0x34);
-				//WriteCmdDataIPS_4_16(0xB602,1,0x34);
-				WriteCmdDataIPS_4_16(0xB000,3,0x0D);//09
-				//WriteCmdDataIPS_4_16(0xB001,1,0x0D);
-				//WriteCmdDataIPS_4_16(0xB002,1,0x0D);
-				//#AVEE:manual,1,-6V
-				WriteCmdDataIPS_4_16(0xB700,3,0x24);
-				//WriteCmdDataIPS_4_16(0xB701,1,0x24);
-				//WriteCmdDataIPS_4_16(0xB702,1,0x24);
-				WriteCmdDataIPS_4_16(0xB100,3,0x0D);
-				//WriteCmdDataIPS_4_16(0xB101,1,0x0D);
-				//WriteCmdDataIPS_4_16(0xB102,1,0x0D);
-				//#PowerControlfor
-				//VCL
-				WriteCmdDataIPS_4_16(0xB800,3,0x24);
-				//WriteCmdDataIPS_4_16(0xB801,1,0x24);
-				//WriteCmdDataIPS_4_16(0xB802,1,0x24);
-				WriteCmdDataIPS_4_16(0xB200,1,0x00);
-				//#VGH:ClampEnable,1,
-				WriteCmdDataIPS_4_16(0xB900,3,0x24);
-				//WriteCmdDataIPS_4_16(0xB901,1,0x24);
-				//WriteCmdDataIPS_4_16(0xB902,1,0x24);
-				WriteCmdDataIPS_4_16(0xB300,3,0x05);
-				//WriteCmdDataIPS_4_16(0xB301,1,0x05);
-				//WriteCmdDataIPS_4_16(0xB302,1,0x05);
-				WriteCmdDataIPS_4_16(0xBF00,1,0x01);
-				//#VGL(LVGL):
-				WriteCmdDataIPS_4_16(0xBA00,3,0x34);
-				//WriteCmdDataIPS_4_16(0xBA01,1,0x34);
-				//WriteCmdDataIPS_4_16(0xBA02,1,0x34);
-				//#VGL_REG(VGLO)
-				WriteCmdDataIPS_4_16(0xB500,3,0x0B);
-				//WriteCmdDataIPS_4_16(0xB501,1,0x0B);
-				//WriteCmdDataIPS_4_16(0xB502,1,0x0B);
-				//#VGMP/VGSP:
-				WriteCmdDataIPS_4_16(0xBC00,1,0x00);
-				WriteCmdDataIPS_4_16(0xBC01,1,0xA3);
-				WriteCmdDataIPS_4_16(0xBC02,1,0x00);
-				//#VGMN/VGSN
-				WriteCmdDataIPS_4_16(0xBD00,1,0x00);
-				WriteCmdDataIPS_4_16(0xBD01,1,0xA3);
-				WriteCmdDataIPS_4_16(0xBD02,1,0x00);
-				//#VCOM=-0.1
-				WriteCmdDataIPS_4_16(0xBE00,1,0x00);
-				WriteCmdDataIPS_4_16(0xBE01,1,0x63);//4f
-					//VCOMH+0x01;
-				//#R+
-				WriteCmdDataIPS_4_16(0xD100,1,0x00);
-				WriteCmdDataIPS_4_16(0xD101,1,0x37);
-				WriteCmdDataIPS_4_16(0xD102,1,0x00);
-				WriteCmdDataIPS_4_16(0xD103,1,0x52);
-				WriteCmdDataIPS_4_16(0xD104,1,0x00);
-				WriteCmdDataIPS_4_16(0xD105,1,0x7B);
-				WriteCmdDataIPS_4_16(0xD106,1,0x00);
-				WriteCmdDataIPS_4_16(0xD107,1,0x99);
-				WriteCmdDataIPS_4_16(0xD108,1,0x00);
-				WriteCmdDataIPS_4_16(0xD109,1,0xB1);
-				WriteCmdDataIPS_4_16(0xD10A,1,0x00);
-				WriteCmdDataIPS_4_16(0xD10B,1,0xD2);
-				WriteCmdDataIPS_4_16(0xD10C,1,0x00);
-				WriteCmdDataIPS_4_16(0xD10D,1,0xF6);
-				WriteCmdDataIPS_4_16(0xD10E,1,0x01);
-				WriteCmdDataIPS_4_16(0xD10F,1,0x27);
-				WriteCmdDataIPS_4_16(0xD110,1,0x01);
-				WriteCmdDataIPS_4_16(0xD111,1,0x4E);
-				WriteCmdDataIPS_4_16(0xD112,1,0x01);
-				WriteCmdDataIPS_4_16(0xD113,1,0x8C);
-				WriteCmdDataIPS_4_16(0xD114,1,0x01);
-				WriteCmdDataIPS_4_16(0xD115,1,0xBE);
-				WriteCmdDataIPS_4_16(0xD116,1,0x02);
-				WriteCmdDataIPS_4_16(0xD117,1,0x0B);
-				WriteCmdDataIPS_4_16(0xD118,1,0x02);
-				WriteCmdDataIPS_4_16(0xD119,1,0x48);
-				WriteCmdDataIPS_4_16(0xD11A,1,0x02);
-				WriteCmdDataIPS_4_16(0xD11B,1,0x4A);
-				WriteCmdDataIPS_4_16(0xD11C,1,0x02);
-				WriteCmdDataIPS_4_16(0xD11D,1,0x7E);
-				WriteCmdDataIPS_4_16(0xD11E,1,0x02);
-				WriteCmdDataIPS_4_16(0xD11F,1,0xBC);
-				WriteCmdDataIPS_4_16(0xD120,1,0x02);
-				WriteCmdDataIPS_4_16(0xD121,1,0xE1);
-				WriteCmdDataIPS_4_16(0xD122,1,0x03);
-				WriteCmdDataIPS_4_16(0xD123,1,0x10);
-				WriteCmdDataIPS_4_16(0xD124,1,0x03);
-				WriteCmdDataIPS_4_16(0xD125,1,0x31);
-				WriteCmdDataIPS_4_16(0xD126,1,0x03);
-				WriteCmdDataIPS_4_16(0xD127,1,0x5A);
-				WriteCmdDataIPS_4_16(0xD128,1,0x03);
-				WriteCmdDataIPS_4_16(0xD129,1,0x73);
-				WriteCmdDataIPS_4_16(0xD12A,1,0x03);
-				WriteCmdDataIPS_4_16(0xD12B,1,0x94);
-				WriteCmdDataIPS_4_16(0xD12C,1,0x03);
-				WriteCmdDataIPS_4_16(0xD12D,1,0x9F);
-				WriteCmdDataIPS_4_16(0xD12E,1,0x03);
-				WriteCmdDataIPS_4_16(0xD12F,1,0xB3);
-				WriteCmdDataIPS_4_16(0xD130,1,0x03);
-				WriteCmdDataIPS_4_16(0xD131,1,0xB9);
-				WriteCmdDataIPS_4_16(0xD132,1,0x03);
-				WriteCmdDataIPS_4_16(0xD133,1,0xC1);
-				//#G+
-				WriteCmdDataIPS_4_16(0xD200,1,0x00);
-				WriteCmdDataIPS_4_16(0xD201,1,0x37);
-				WriteCmdDataIPS_4_16(0xD202,1,0x00);
-				WriteCmdDataIPS_4_16(0xD203,1,0x52);
-				WriteCmdDataIPS_4_16(0xD204,1,0x00);
-				WriteCmdDataIPS_4_16(0xD205,1,0x7B);
-				WriteCmdDataIPS_4_16(0xD206,1,0x00);
-				WriteCmdDataIPS_4_16(0xD207,1,0x99);
-				WriteCmdDataIPS_4_16(0xD208,1,0x00);
-				WriteCmdDataIPS_4_16(0xD209,1,0xB1);
-				WriteCmdDataIPS_4_16(0xD20A,1,0x00);
-				WriteCmdDataIPS_4_16(0xD20B,1,0xD2);
-				WriteCmdDataIPS_4_16(0xD20C,1,0x00);
-				WriteCmdDataIPS_4_16(0xD20D,1,0xF6);
-				WriteCmdDataIPS_4_16(0xD20E,1,0x01);
-				WriteCmdDataIPS_4_16(0xD20F,1,0x27);
-				WriteCmdDataIPS_4_16(0xD210,1,0x01);
-				WriteCmdDataIPS_4_16(0xD211,1,0x4E);
-				WriteCmdDataIPS_4_16(0xD212,1,0x01);
-				WriteCmdDataIPS_4_16(0xD213,1,0x8C);
-				WriteCmdDataIPS_4_16(0xD214,1,0x01);
-				WriteCmdDataIPS_4_16(0xD215,1,0xBE);
-				WriteCmdDataIPS_4_16(0xD216,1,0x02);
-				WriteCmdDataIPS_4_16(0xD217,1,0x0B);
-				WriteCmdDataIPS_4_16(0xD218,1,0x02);
-				WriteCmdDataIPS_4_16(0xD219,1,0x48);
-				WriteCmdDataIPS_4_16(0xD21A,1,0x02);
-				WriteCmdDataIPS_4_16(0xD21B,1,0x4A);
-				WriteCmdDataIPS_4_16(0xD21C,1,0x02);
-				WriteCmdDataIPS_4_16(0xD21D,1,0x7E);
-				WriteCmdDataIPS_4_16(0xD21E,1,0x02);
-				WriteCmdDataIPS_4_16(0xD21F,1,0xBC);
-				WriteCmdDataIPS_4_16(0xD220,1,0x02);
-				WriteCmdDataIPS_4_16(0xD221,1,0xE1);
-				WriteCmdDataIPS_4_16(0xD222,1,0x03);
-				WriteCmdDataIPS_4_16(0xD223,1,0x10);
-				WriteCmdDataIPS_4_16(0xD224,1,0x03);
-				WriteCmdDataIPS_4_16(0xD225,1,0x31);
-				WriteCmdDataIPS_4_16(0xD226,1,0x03);
-				WriteCmdDataIPS_4_16(0xD227,1,0x5A);
-				WriteCmdDataIPS_4_16(0xD228,1,0x03);
-				WriteCmdDataIPS_4_16(0xD229,1,0x73);
-				WriteCmdDataIPS_4_16(0xD22A,1,0x03);
-				WriteCmdDataIPS_4_16(0xD22B,1,0x94);
-				WriteCmdDataIPS_4_16(0xD22C,1,0x03);
-				WriteCmdDataIPS_4_16(0xD22D,1,0x9F);
-				WriteCmdDataIPS_4_16(0xD22E,1,0x03);
-				WriteCmdDataIPS_4_16(0xD22F,1,0xB3);
-				WriteCmdDataIPS_4_16(0xD230,1,0x03);
-				WriteCmdDataIPS_4_16(0xD231,1,0xB9);
-				WriteCmdDataIPS_4_16(0xD232,1,0x03);
-				WriteCmdDataIPS_4_16(0xD233,1,0xC1);
-				//#B+
-				WriteCmdDataIPS_4_16(0xD300,1,0x00);
-				WriteCmdDataIPS_4_16(0xD301,1,0x37);
-				WriteCmdDataIPS_4_16(0xD302,1,0x00);
-				WriteCmdDataIPS_4_16(0xD303,1,0x52);
-				WriteCmdDataIPS_4_16(0xD304,1,0x00);
-				WriteCmdDataIPS_4_16(0xD305,1,0x7B);
-				WriteCmdDataIPS_4_16(0xD306,1,0x00);
-				WriteCmdDataIPS_4_16(0xD307,1,0x99);
-				WriteCmdDataIPS_4_16(0xD308,1,0x00);
-				WriteCmdDataIPS_4_16(0xD309,1,0xB1);
-				WriteCmdDataIPS_4_16(0xD30A,1,0x00);
-				WriteCmdDataIPS_4_16(0xD30B,1,0xD2);
-				WriteCmdDataIPS_4_16(0xD30C,1,0x00);
-				WriteCmdDataIPS_4_16(0xD30D,1,0xF6);
-				WriteCmdDataIPS_4_16(0xD30E,1,0x01);
-				WriteCmdDataIPS_4_16(0xD30F,1,0x27);
-				WriteCmdDataIPS_4_16(0xD310,1,0x01);
-				WriteCmdDataIPS_4_16(0xD311,1,0x4E);
-				WriteCmdDataIPS_4_16(0xD312,1,0x01);
-				WriteCmdDataIPS_4_16(0xD313,1,0x8C);
-				WriteCmdDataIPS_4_16(0xD314,1,0x01);
-				WriteCmdDataIPS_4_16(0xD315,1,0xBE);
-				WriteCmdDataIPS_4_16(0xD316,1,0x02);
-				WriteCmdDataIPS_4_16(0xD317,1,0x0B);
-				WriteCmdDataIPS_4_16(0xD318,1,0x02);
-				WriteCmdDataIPS_4_16(0xD319,1,0x48);
-				WriteCmdDataIPS_4_16(0xD31A,1,0x02);
-				WriteCmdDataIPS_4_16(0xD31B,1,0x4A);
-				WriteCmdDataIPS_4_16(0xD31C,1,0x02);
-				WriteCmdDataIPS_4_16(0xD31D,1,0x7E);
-				WriteCmdDataIPS_4_16(0xD31E,1,0x02);
-				WriteCmdDataIPS_4_16(0xD31F,1,0xBC);
-				WriteCmdDataIPS_4_16(0xD320,1,0x02);
-				WriteCmdDataIPS_4_16(0xD321,1,0xE1);
-				WriteCmdDataIPS_4_16(0xD322,1,0x03);
-				WriteCmdDataIPS_4_16(0xD323,1,0x10);
-				WriteCmdDataIPS_4_16(0xD324,1,0x03);
-				WriteCmdDataIPS_4_16(0xD325,1,0x31);
-				WriteCmdDataIPS_4_16(0xD326,1,0x03);
-				WriteCmdDataIPS_4_16(0xD327,1,0x5A);
-				WriteCmdDataIPS_4_16(0xD328,1,0x03);
-				WriteCmdDataIPS_4_16(0xD329,1,0x73);
-				WriteCmdDataIPS_4_16(0xD32A,1,0x03);
-				WriteCmdDataIPS_4_16(0xD32B,1,0x94);
-				WriteCmdDataIPS_4_16(0xD32C,1,0x03);
-				WriteCmdDataIPS_4_16(0xD32D,1,0x9F);
-				WriteCmdDataIPS_4_16(0xD32E,1,0x03);
-				WriteCmdDataIPS_4_16(0xD32F,1,0xB3);
-				WriteCmdDataIPS_4_16(0xD330,1,0x03);
-				WriteCmdDataIPS_4_16(0xD331,1,0xB9);
-				WriteCmdDataIPS_4_16(0xD332,1,0x03);
-				WriteCmdDataIPS_4_16(0xD333,1,0xC1);
-				//#R-///////////////////////////////////////////
-				WriteCmdDataIPS_4_16(0xD400,1,0x00);
-				WriteCmdDataIPS_4_16(0xD401,1,0x37);
-				WriteCmdDataIPS_4_16(0xD402,1,0x00);
-				WriteCmdDataIPS_4_16(0xD403,1,0x52);
-				WriteCmdDataIPS_4_16(0xD404,1,0x00);
-				WriteCmdDataIPS_4_16(0xD405,1,0x7B);
-				WriteCmdDataIPS_4_16(0xD406,1,0x00);
-				WriteCmdDataIPS_4_16(0xD407,1,0x99);
-				WriteCmdDataIPS_4_16(0xD408,1,0x00);
-				WriteCmdDataIPS_4_16(0xD409,1,0xB1);
-				WriteCmdDataIPS_4_16(0xD40A,1,0x00);
-				WriteCmdDataIPS_4_16(0xD40B,1,0xD2);
-				WriteCmdDataIPS_4_16(0xD40C,1,0x00);
-				WriteCmdDataIPS_4_16(0xD40D,1,0xF6);
-				WriteCmdDataIPS_4_16(0xD40E,1,0x01);
-				WriteCmdDataIPS_4_16(0xD40F,1,0x27);
-				WriteCmdDataIPS_4_16(0xD410,1,0x01);
-				WriteCmdDataIPS_4_16(0xD411,1,0x4E);
-				WriteCmdDataIPS_4_16(0xD412,1,0x01);
-				WriteCmdDataIPS_4_16(0xD413,1,0x8C);
-				WriteCmdDataIPS_4_16(0xD414,1,0x01);
-				WriteCmdDataIPS_4_16(0xD415,1,0xBE);
-				WriteCmdDataIPS_4_16(0xD416,1,0x02);
-				WriteCmdDataIPS_4_16(0xD417,1,0x0B);
-				WriteCmdDataIPS_4_16(0xD418,1,0x02);
-				WriteCmdDataIPS_4_16(0xD419,1,0x48);
-				WriteCmdDataIPS_4_16(0xD41A,1,0x02);
-				WriteCmdDataIPS_4_16(0xD41B,1,0x4A);
-				WriteCmdDataIPS_4_16(0xD41C,1,0x02);
-				WriteCmdDataIPS_4_16(0xD41D,1,0x7E);
-				WriteCmdDataIPS_4_16(0xD41E,1,0x02);
-				WriteCmdDataIPS_4_16(0xD41F,1,0xBC);
-				WriteCmdDataIPS_4_16(0xD420,1,0x02);
-				WriteCmdDataIPS_4_16(0xD421,1,0xE1);
-				WriteCmdDataIPS_4_16(0xD422,1,0x03);
-				WriteCmdDataIPS_4_16(0xD423,1,0x10);
-				WriteCmdDataIPS_4_16(0xD424,1,0x03);
-				WriteCmdDataIPS_4_16(0xD425,1,0x31);
-				WriteCmdDataIPS_4_16(0xD426,1,0x03);
-				WriteCmdDataIPS_4_16(0xD427,1,0x5A);
-				WriteCmdDataIPS_4_16(0xD428,1,0x03);
-				WriteCmdDataIPS_4_16(0xD429,1,0x73);
-				WriteCmdDataIPS_4_16(0xD42A,1,0x03);
-				WriteCmdDataIPS_4_16(0xD42B,1,0x94);
-				WriteCmdDataIPS_4_16(0xD42C,1,0x03);
-				WriteCmdDataIPS_4_16(0xD42D,1,0x9F);
-				WriteCmdDataIPS_4_16(0xD42E,1,0x03);
-				WriteCmdDataIPS_4_16(0xD42F,1,0xB3);
-				WriteCmdDataIPS_4_16(0xD430,1,0x03);
-				WriteCmdDataIPS_4_16(0xD431,1,0xB9);
-				WriteCmdDataIPS_4_16(0xD432,1,0x03);
-				WriteCmdDataIPS_4_16(0xD433,1,0xC1);
-				//#G-//////////////////////////////////////////////
-				WriteCmdDataIPS_4_16(0xD500,1,0x00);
-				WriteCmdDataIPS_4_16(0xD501,1,0x37);
-				WriteCmdDataIPS_4_16(0xD502,1,0x00);
-				WriteCmdDataIPS_4_16(0xD503,1,0x52);
-				WriteCmdDataIPS_4_16(0xD504,1,0x00);
-				WriteCmdDataIPS_4_16(0xD505,1,0x7B);
-				WriteCmdDataIPS_4_16(0xD506,1,0x00);
-				WriteCmdDataIPS_4_16(0xD507,1,0x99);
-				WriteCmdDataIPS_4_16(0xD508,1,0x00);
-				WriteCmdDataIPS_4_16(0xD509,1,0xB1);
-				WriteCmdDataIPS_4_16(0xD50A,1,0x00);
-				WriteCmdDataIPS_4_16(0xD50B,1,0xD2);
-				WriteCmdDataIPS_4_16(0xD50C,1,0x00);
-				WriteCmdDataIPS_4_16(0xD50D,1,0xF6);
-				WriteCmdDataIPS_4_16(0xD50E,1,0x01);
-				WriteCmdDataIPS_4_16(0xD50F,1,0x27);
-				WriteCmdDataIPS_4_16(0xD510,1,0x01);
-				WriteCmdDataIPS_4_16(0xD511,1,0x4E);
-				WriteCmdDataIPS_4_16(0xD512,1,0x01);
-				WriteCmdDataIPS_4_16(0xD513,1,0x8C);
-				WriteCmdDataIPS_4_16(0xD514,1,0x01);
-				WriteCmdDataIPS_4_16(0xD515,1,0xBE);
-				WriteCmdDataIPS_4_16(0xD516,1,0x02);
-				WriteCmdDataIPS_4_16(0xD517,1,0x0B);
-				WriteCmdDataIPS_4_16(0xD518,1,0x02);
-				WriteCmdDataIPS_4_16(0xD519,1,0x48);
-				WriteCmdDataIPS_4_16(0xD51A,1,0x02);
-				WriteCmdDataIPS_4_16(0xD51B,1,0x4A);
-				WriteCmdDataIPS_4_16(0xD51C,1,0x02);
-				WriteCmdDataIPS_4_16(0xD51D,1,0x7E);
-				WriteCmdDataIPS_4_16(0xD51E,1,0x02);
-				WriteCmdDataIPS_4_16(0xD51F,1,0xBC);
-				WriteCmdDataIPS_4_16(0xD520,1,0x02);
-				WriteCmdDataIPS_4_16(0xD521,1,0xE1);
-				WriteCmdDataIPS_4_16(0xD522,1,0x03);
-				WriteCmdDataIPS_4_16(0xD523,1,0x10);
-				WriteCmdDataIPS_4_16(0xD524,1,0x03);
-				WriteCmdDataIPS_4_16(0xD525,1,0x31);
-				WriteCmdDataIPS_4_16(0xD526,1,0x03);
-				WriteCmdDataIPS_4_16(0xD527,1,0x5A);
-				WriteCmdDataIPS_4_16(0xD528,1,0x03);
-				WriteCmdDataIPS_4_16(0xD529,1,0x73);
-				WriteCmdDataIPS_4_16(0xD52A,1,0x03);
-				WriteCmdDataIPS_4_16(0xD52B,1,0x94);
-				WriteCmdDataIPS_4_16(0xD52C,1,0x03);
-				WriteCmdDataIPS_4_16(0xD52D,1,0x9F);
-				WriteCmdDataIPS_4_16(0xD52E,1,0x03);
-				WriteCmdDataIPS_4_16(0xD52F,1,0xB3);
-				WriteCmdDataIPS_4_16(0xD530,1,0x03);
-				WriteCmdDataIPS_4_16(0xD531,1,0xB9);
-				WriteCmdDataIPS_4_16(0xD532,1,0x03);
-				WriteCmdDataIPS_4_16(0xD533,1,0xC1);
-				//#B-///////////////////////////////
-				WriteCmdDataIPS_4_16(0xD600,1,0x00);
-				WriteCmdDataIPS_4_16(0xD601,1,0x37);
-				WriteCmdDataIPS_4_16(0xD602,1,0x00);
-				WriteCmdDataIPS_4_16(0xD603,1,0x52);
-				WriteCmdDataIPS_4_16(0xD604,1,0x00);
-				WriteCmdDataIPS_4_16(0xD605,1,0x7B);
-				WriteCmdDataIPS_4_16(0xD606,1,0x00);
-				WriteCmdDataIPS_4_16(0xD607,1,0x99);
-				WriteCmdDataIPS_4_16(0xD608,1,0x00);
-				WriteCmdDataIPS_4_16(0xD609,1,0xB1);
-				WriteCmdDataIPS_4_16(0xD60A,1,0x00);
-				WriteCmdDataIPS_4_16(0xD60B,1,0xD2);
-				WriteCmdDataIPS_4_16(0xD60C,1,0x00);
-				WriteCmdDataIPS_4_16(0xD60D,1,0xF6);
-				WriteCmdDataIPS_4_16(0xD60E,1,0x01);
-				WriteCmdDataIPS_4_16(0xD60F,1,0x27);
-				WriteCmdDataIPS_4_16(0xD610,1,0x01);
-				WriteCmdDataIPS_4_16(0xD611,1,0x4E);
-				WriteCmdDataIPS_4_16(0xD612,1,0x01);
-				WriteCmdDataIPS_4_16(0xD613,1,0x8C);
-				WriteCmdDataIPS_4_16(0xD614,1,0x01);
-				WriteCmdDataIPS_4_16(0xD615,1,0xBE);
-				WriteCmdDataIPS_4_16(0xD616,1,0x02);
-				WriteCmdDataIPS_4_16(0xD617,1,0x0B);
-				WriteCmdDataIPS_4_16(0xD618,1,0x02);
-				WriteCmdDataIPS_4_16(0xD619,1,0x48);
-				WriteCmdDataIPS_4_16(0xD61A,1,0x02);
-				WriteCmdDataIPS_4_16(0xD61B,1,0x4A);
-				WriteCmdDataIPS_4_16(0xD61C,1,0x02);
-				WriteCmdDataIPS_4_16(0xD61D,1,0x7E);
-				WriteCmdDataIPS_4_16(0xD61E,1,0x02);
-				WriteCmdDataIPS_4_16(0xD61F,1,0xBC);
-				WriteCmdDataIPS_4_16(0xD620,1,0x02);
-				WriteCmdDataIPS_4_16(0xD621,1,0xE1);
-				WriteCmdDataIPS_4_16(0xD622,1,0x03);
-				WriteCmdDataIPS_4_16(0xD623,1,0x10);
-				WriteCmdDataIPS_4_16(0xD624,1,0x03);
-				WriteCmdDataIPS_4_16(0xD625,1,0x31);
-				WriteCmdDataIPS_4_16(0xD626,1,0x03);
-				WriteCmdDataIPS_4_16(0xD627,1,0x5A);
-				WriteCmdDataIPS_4_16(0xD628,1,0x03);
-				WriteCmdDataIPS_4_16(0xD629,1,0x73);
-				WriteCmdDataIPS_4_16(0xD62A,1,0x03);
-				WriteCmdDataIPS_4_16(0xD62B,1,0x94);
-				WriteCmdDataIPS_4_16(0xD62C,1,0x03);
-				WriteCmdDataIPS_4_16(0xD62D,1,0x9F);
-				WriteCmdDataIPS_4_16(0xD62E,1,0x03);
-				WriteCmdDataIPS_4_16(0xD62F,1,0xB3);
-				WriteCmdDataIPS_4_16(0xD630,1,0x03);
-				WriteCmdDataIPS_4_16(0xD631,1,0xB9);
-				WriteCmdDataIPS_4_16(0xD632,1,0x03);
-				WriteCmdDataIPS_4_16(0xD633,1,0xC1);
-				//#EnablePage0
-				WriteCmdDataIPS_4_16(0xF000,1,0x55);
-				WriteCmdDataIPS_4_16(0xF001,1,0xAA);
-				WriteCmdDataIPS_4_16(0xF002,1,0x52);
-				WriteCmdDataIPS_4_16(0xF003,1,0x08);
-				WriteCmdDataIPS_4_16(0xF004,1,0x00);
-				//#RGBI/FSetting
-				WriteCmdDataIPS_4_16(0xB000,1,0x08);
-				WriteCmdDataIPS_4_16(0xB001,1,0x05);
-				WriteCmdDataIPS_4_16(0xB002,1,0x02);
-				WriteCmdDataIPS_4_16(0xB003,1,0x05);
-				WriteCmdDataIPS_4_16(0xB004,1,0x02);
-				//##SDT:
-				WriteCmdDataIPS_4_16(0xB600,1,0x08);
-				WriteCmdDataIPS_4_16(0xB500,1,0x50);//480x800
-				//##GateEQ:
-				WriteCmdDataIPS_4_16(0xB700,2,0x00);
-				//WriteCmdDataIPS_4_16(0xB701,1,0x00);
-				//##SourceEQ:
-				WriteCmdDataIPS_4_16(0xB800,1,0x01);
-				WriteCmdDataIPS_4_16(0xB801,3,0x05);
-				//WriteCmdDataIPS_4_16(0xB802,1,0x05);
-				//WriteCmdDataIPS_4_16(0xB803,1,0x05);
-				//#Inversion:Columninversion(NVT)
-				WriteCmdDataIPS_4_16(0xBC00,3,0x00);
-				//WriteCmdDataIPS_4_16(0xBC01,1,0x00);
-				//WriteCmdDataIPS_4_16(0xBC02,1,0x00);
-				//#BOE'sSetting(default)
-				WriteCmdDataIPS_4_16(0xCC00,1,0x03);
-				WriteCmdDataIPS_4_16(0xCC01,2,0x00);
-				//WriteCmdDataIPS_4_16(0xCC02,1,0x00);
-				//#DisplayTiming:
-				WriteCmdDataIPS_4_16(0xBD00,1,0x01);
-				WriteCmdDataIPS_4_16(0xBD01,1,0x84);
-				WriteCmdDataIPS_4_16(0xBD02,1,0x07);
-				WriteCmdDataIPS_4_16(0xBD03,1,0x31);
-				WriteCmdDataIPS_4_16(0xBD04,1,0x00);
-				WriteCmdDataIPS_4_16(0xBA00,1,0x01);
-				WriteCmdDataIPS_4_16(0xFF00,1,0xAA);
-				WriteCmdDataIPS_4_16(0xFF01,1,0x55);
-				WriteCmdDataIPS_4_16(0xFF02,1,0x25);
-				WriteCmdDataIPS_4_16(0xFF03,1,0x01);
-				WriteCmdDataIPS_4_16(0x3500,1,0x00);
-				WriteCmdDataIPS_4_16(0x3A00,1,0x66); // 55=Colour 565 66=Colour 666 77=Colour 888
-#endif
-
-#ifdef alt1
-		// NT35510 IPS Display ALTERNATE to test peters board
-		Option.SSDspeed = 1;
-		SaveOptions();
-		WriteCmdDataIPS_4_16(0xF000,1,0x55);
-		WriteCmdDataIPS_4_16(0xF001,1,0xAA);
-		WriteCmdDataIPS_4_16(0xF002,1,0x52);
-		WriteCmdDataIPS_4_16(0xF003,1,0x08);
-		WriteCmdDataIPS_4_16(0xF004,1,0x01);
-		//AVDD Set AVDD 5.2V
-		WriteCmdDataIPS_4_16(0xB000,1,0x0D);
-		WriteCmdDataIPS_4_16(0xB001,1,0x0D);
-		WriteCmdDataIPS_4_16(0xB002,1,0x0D);
-		//AVDD ratio
-		WriteCmdDataIPS_4_16(0xB600,1,0x34);
-		WriteCmdDataIPS_4_16(0xB601,1,0x34);
-		WriteCmdDataIPS_4_16(0xB602,1,0x34);
-		//AVEE -5.2V
-		WriteCmdDataIPS_4_16(0xB100,1,0x0D);
-		WriteCmdDataIPS_4_16(0xB101,1,0x0D);
-		WriteCmdDataIPS_4_16(0xB102,1,0x0D);
-		//AVEE ratio
-		WriteCmdDataIPS_4_16(0xB700,1,0x34);
-		WriteCmdDataIPS_4_16(0xB701,1,0x34);
-		WriteCmdDataIPS_4_16(0xB702,1,0x34);
-		//VCL -2.5V
-		WriteCmdDataIPS_4_16(0xB200,1,0x00);
-		WriteCmdDataIPS_4_16(0xB201,1,0x00);
-		WriteCmdDataIPS_4_16(0xB202,1,0x00);
-		//VCL ratio
-		WriteCmdDataIPS_4_16(0xB800,1,0x24);
-		WriteCmdDataIPS_4_16(0xB801,1,0x24);
-		WriteCmdDataIPS_4_16(0xB802,1,0x24);
-		//VGH 15V (Free pump)
-		WriteCmdDataIPS_4_16(0xBF00,1,0x01);
-		WriteCmdDataIPS_4_16(0xB300,1,0x0F);
-		WriteCmdDataIPS_4_16(0xB301,1,0x0F);
-		WriteCmdDataIPS_4_16(0xB302,1,0x0F);
-		//VGH ratio
-		WriteCmdDataIPS_4_16(0xB900,1,0x34);
-		WriteCmdDataIPS_4_16(0xB901,1,0x34);
-		WriteCmdDataIPS_4_16(0xB902,1,0x34);
-		//VGL_REG -10V
-		WriteCmdDataIPS_4_16(0xB500,1,0x08);
-		WriteCmdDataIPS_4_16(0xB501,1,0x08);
-		WriteCmdDataIPS_4_16(0xB502,1,0x08);
-		WriteCmdDataIPS_4_16(0xC200,1,0x03);
-		//VGLX ratio
-		WriteCmdDataIPS_4_16(0xBA00,1,0x24);
-		WriteCmdDataIPS_4_16(0xBA01,1,0x24);
-		WriteCmdDataIPS_4_16(0xBA02,1,0x24);
-		//VGMP/VGSP 4.5V/0V
-		WriteCmdDataIPS_4_16(0xBC00,1,0x00);
-		WriteCmdDataIPS_4_16(0xBC01,1,0x78);
-		WriteCmdDataIPS_4_16(0xBC02,1,0x00);
-		//VGMN/VGSN -4.5V/0V
-		WriteCmdDataIPS_4_16(0xBD00,1,0x00);
-		WriteCmdDataIPS_4_16(0xBD01,1,0x78);
-		WriteCmdDataIPS_4_16(0xBD02,1,0x00);
-		//VCOM
-		WriteCmdDataIPS_4_16(0xBE00,1,0x00);
-		WriteCmdDataIPS_4_16(0xBE01,1,0x64);
-		//Gamma Setting
-		WriteCmdDataIPS_4_16(0xD100,1,0x00);
-		WriteCmdDataIPS_4_16(0xD101,1,0x33);
-		WriteCmdDataIPS_4_16(0xD102,1,0x00);
-		WriteCmdDataIPS_4_16(0xD103,1,0x34);
-		WriteCmdDataIPS_4_16(0xD104,1,0x00);
-		WriteCmdDataIPS_4_16(0xD105,1,0x3A);
-		WriteCmdDataIPS_4_16(0xD106,1,0x00);
-		WriteCmdDataIPS_4_16(0xD107,1,0x4A);
-		WriteCmdDataIPS_4_16(0xD108,1,0x00);
-		WriteCmdDataIPS_4_16(0xD109,1,0x5C);
-		WriteCmdDataIPS_4_16(0xD10A,1,0x00);
-		WriteCmdDataIPS_4_16(0xD10B,1,0x81);
-		WriteCmdDataIPS_4_16(0xD10C,1,0x00);
-		WriteCmdDataIPS_4_16(0xD10D,1,0xA6);
-		WriteCmdDataIPS_4_16(0xD10E,1,0x00);
-		WriteCmdDataIPS_4_16(0xD10F,1,0xE5);
-		WriteCmdDataIPS_4_16(0xD110,1,0x01);
-		WriteCmdDataIPS_4_16(0xD111,1,0x13);
-		WriteCmdDataIPS_4_16(0xD112,1,0x01);
-		WriteCmdDataIPS_4_16(0xD113,1,0x54);
-		WriteCmdDataIPS_4_16(0xD114,1,0x01);
-		WriteCmdDataIPS_4_16(0xD115,1,0x82);
-		WriteCmdDataIPS_4_16(0xD116,1,0x01);
-		WriteCmdDataIPS_4_16(0xD117,1,0xCA);
-		WriteCmdDataIPS_4_16(0xD118,1,0x02);
-		WriteCmdDataIPS_4_16(0xD119,1,0x00);
-		WriteCmdDataIPS_4_16(0xD11A,1,0x02);
-		WriteCmdDataIPS_4_16(0xD11B,1,0x01);
-		WriteCmdDataIPS_4_16(0xD11C,1,0x02);
-		WriteCmdDataIPS_4_16(0xD11D,1,0x34);
-		WriteCmdDataIPS_4_16(0xD11E,1,0x02);
-		WriteCmdDataIPS_4_16(0xD11F,1,0x67);
-		WriteCmdDataIPS_4_16(0xD120,1,0x02);
-		WriteCmdDataIPS_4_16(0xD121,1,0x84);
-		WriteCmdDataIPS_4_16(0xD122,1,0x02);
-		WriteCmdDataIPS_4_16(0xD123,1,0xA4);
-		WriteCmdDataIPS_4_16(0xD124,1,0x02);
-		WriteCmdDataIPS_4_16(0xD125,1,0xB7);
-		WriteCmdDataIPS_4_16(0xD126,1,0x02);
-		WriteCmdDataIPS_4_16(0xD127,1,0xCF);
-		WriteCmdDataIPS_4_16(0xD128,1,0x02);
-		WriteCmdDataIPS_4_16(0xD129,1,0xDE);
-		WriteCmdDataIPS_4_16(0xD12A,1,0x02);
-		WriteCmdDataIPS_4_16(0xD12B,1,0xF2);
-		WriteCmdDataIPS_4_16(0xD12C,1,0x02);
-		WriteCmdDataIPS_4_16(0xD12D,1,0xFE);
-		WriteCmdDataIPS_4_16(0xD12E,1,0x03);
-		WriteCmdDataIPS_4_16(0xD12F,1,0x10);
-		WriteCmdDataIPS_4_16(0xD130,1,0x03);
-		WriteCmdDataIPS_4_16(0xD131,1,0x33);
-		WriteCmdDataIPS_4_16(0xD132,1,0x03);
-		WriteCmdDataIPS_4_16(0xD133,1,0x6D);
-		WriteCmdDataIPS_4_16(0xD200,1,0x00);
-		WriteCmdDataIPS_4_16(0xD201,1,0x33);
-		WriteCmdDataIPS_4_16(0xD202,1,0x00);
-		WriteCmdDataIPS_4_16(0xD203,1,0x34);
-		WriteCmdDataIPS_4_16(0xD204,1,0x00);
-		WriteCmdDataIPS_4_16(0xD205,1,0x3A);
-		WriteCmdDataIPS_4_16(0xD206,1,0x00);
-		WriteCmdDataIPS_4_16(0xD207,1,0x4A);
-		WriteCmdDataIPS_4_16(0xD208,1,0x00);
-		WriteCmdDataIPS_4_16(0xD209,1,0x5C);
-		WriteCmdDataIPS_4_16(0xD20A,1,0x00);
-		WriteCmdDataIPS_4_16(0xD20B,1,0x81);
-		WriteCmdDataIPS_4_16(0xD20C,1,0x00);
-		WriteCmdDataIPS_4_16(0xD20D,1,0xA6);
-		WriteCmdDataIPS_4_16(0xD20E,1,0x00);
-		WriteCmdDataIPS_4_16(0xD20F,1,0xE5);
-		WriteCmdDataIPS_4_16(0xD210,1,0x01);
-		WriteCmdDataIPS_4_16(0xD211,1,0x13);
-		WriteCmdDataIPS_4_16(0xD212,1,0x01);
-		WriteCmdDataIPS_4_16(0xD213,1,0x54);
-		WriteCmdDataIPS_4_16(0xD214,1,0x01);
-		WriteCmdDataIPS_4_16(0xD215,1,0x82);
-		WriteCmdDataIPS_4_16(0xD216,1,0x01);
-		WriteCmdDataIPS_4_16(0xD217,1,0xCA);
-		WriteCmdDataIPS_4_16(0xD218,1,0x02);
-		WriteCmdDataIPS_4_16(0xD219,1,0x00);
-		WriteCmdDataIPS_4_16(0xD21A,1,0x02);
-		WriteCmdDataIPS_4_16(0xD21B,1,0x01);
-		WriteCmdDataIPS_4_16(0xD21C,1,0x02);
-		WriteCmdDataIPS_4_16(0xD21D,1,0x34);
-		WriteCmdDataIPS_4_16(0xD21E,1,0x02);
-		WriteCmdDataIPS_4_16(0xD21F,1,0x67);
-		WriteCmdDataIPS_4_16(0xD220,1,0x02);
-		WriteCmdDataIPS_4_16(0xD221,1,0x84);
-		WriteCmdDataIPS_4_16(0xD222,1,0x02);
-		WriteCmdDataIPS_4_16(0xD223,1,0xA4);
-		WriteCmdDataIPS_4_16(0xD224,1,0x02);
-		WriteCmdDataIPS_4_16(0xD225,1,0xB7);
-		WriteCmdDataIPS_4_16(0xD226,1,0x02);
-		WriteCmdDataIPS_4_16(0xD227,1,0xCF);
-		WriteCmdDataIPS_4_16(0xD228,1,0x02);
-		WriteCmdDataIPS_4_16(0xD229,1,0xDE);
-		WriteCmdDataIPS_4_16(0xD22A,1,0x02);
-		WriteCmdDataIPS_4_16(0xD22B,1,0xF2);
-		WriteCmdDataIPS_4_16(0xD22C,1,0x02);
-		WriteCmdDataIPS_4_16(0xD22D,1,0xFE);
-		WriteCmdDataIPS_4_16(0xD22E,1,0x03);
-		WriteCmdDataIPS_4_16(0xD22F,1,0x10);
-		WriteCmdDataIPS_4_16(0xD230,1,0x03);
-		WriteCmdDataIPS_4_16(0xD231,1,0x33);
-		WriteCmdDataIPS_4_16(0xD232,1,0x03);
-		WriteCmdDataIPS_4_16(0xD233,1,0x6D);
-		WriteCmdDataIPS_4_16(0xD300,1,0x00);
-		WriteCmdDataIPS_4_16(0xD301,1,0x33);
-		WriteCmdDataIPS_4_16(0xD302,1,0x00);
-		WriteCmdDataIPS_4_16(0xD303,1,0x34);
-		WriteCmdDataIPS_4_16(0xD304,1,0x00);
-		WriteCmdDataIPS_4_16(0xD305,1,0x3A);
-		WriteCmdDataIPS_4_16(0xD306,1,0x00);
-		WriteCmdDataIPS_4_16(0xD307,1,0x4A);
-		WriteCmdDataIPS_4_16(0xD308,1,0x00);
-		WriteCmdDataIPS_4_16(0xD309,1,0x5C);
-		WriteCmdDataIPS_4_16(0xD30A,1,0x00);
-		WriteCmdDataIPS_4_16(0xD30B,1,0x81);
-		WriteCmdDataIPS_4_16(0xD30C,1,0x00);
-		WriteCmdDataIPS_4_16(0xD30D,1,0xA6);
-		WriteCmdDataIPS_4_16(0xD30E,1,0x00);
-		WriteCmdDataIPS_4_16(0xD30F,1,0xE5);
-		WriteCmdDataIPS_4_16(0xD310,1,0x01);
-		WriteCmdDataIPS_4_16(0xD311,1,0x13);
-		WriteCmdDataIPS_4_16(0xD312,1,0x01);
-		WriteCmdDataIPS_4_16(0xD313,1,0x54);
-		WriteCmdDataIPS_4_16(0xD314,1,0x01);
-		WriteCmdDataIPS_4_16(0xD315,1,0x82);
-		WriteCmdDataIPS_4_16(0xD316,1,0x01);
-		WriteCmdDataIPS_4_16(0xD317,1,0xCA);
-		WriteCmdDataIPS_4_16(0xD318,1,0x02);
-		WriteCmdDataIPS_4_16(0xD319,1,0x00);
-		WriteCmdDataIPS_4_16(0xD31A,1,0x02);
-		WriteCmdDataIPS_4_16(0xD31B,1,0x01);
-		WriteCmdDataIPS_4_16(0xD31C,1,0x02);
-		WriteCmdDataIPS_4_16(0xD31D,1,0x34);
-		WriteCmdDataIPS_4_16(0xD31E,1,0x02);
-		WriteCmdDataIPS_4_16(0xD31F,1,0x67);
-		WriteCmdDataIPS_4_16(0xD320,1,0x02);
-		WriteCmdDataIPS_4_16(0xD321,1,0x84);
-		WriteCmdDataIPS_4_16(0xD322,1,0x02);
-		WriteCmdDataIPS_4_16(0xD323,1,0xA4);
-		WriteCmdDataIPS_4_16(0xD324,1,0x02);
-		WriteCmdDataIPS_4_16(0xD325,1,0xB7);
-		WriteCmdDataIPS_4_16(0xD326,1,0x02);
-		WriteCmdDataIPS_4_16(0xD327,1,0xCF);
-		WriteCmdDataIPS_4_16(0xD328,1,0x02);
-		WriteCmdDataIPS_4_16(0xD329,1,0xDE);
-		WriteCmdDataIPS_4_16(0xD32A,1,0x02);
-		WriteCmdDataIPS_4_16(0xD32B,1,0xF2);
-		WriteCmdDataIPS_4_16(0xD32C,1,0x02);
-		WriteCmdDataIPS_4_16(0xD32D,1,0xFE);
-		WriteCmdDataIPS_4_16(0xD32E,1,0x03);
-		WriteCmdDataIPS_4_16(0xD32F,1,0x10);
-		WriteCmdDataIPS_4_16(0xD330,1,0x03);
-		WriteCmdDataIPS_4_16(0xD331,1,0x33);
-		WriteCmdDataIPS_4_16(0xD332,1,0x03);
-		WriteCmdDataIPS_4_16(0xD333,1,0x6D);
-		WriteCmdDataIPS_4_16(0xD400,1,0x00);
-		WriteCmdDataIPS_4_16(0xD401,1,0x33);
-		WriteCmdDataIPS_4_16(0xD402,1,0x00);
-		WriteCmdDataIPS_4_16(0xD403,1,0x34);
-		WriteCmdDataIPS_4_16(0xD404,1,0x00);
-		WriteCmdDataIPS_4_16(0xD405,1,0x3A);
-		WriteCmdDataIPS_4_16(0xD406,1,0x00);
-		WriteCmdDataIPS_4_16(0xD407,1,0x4A);
-		WriteCmdDataIPS_4_16(0xD408,1,0x00);
-		WriteCmdDataIPS_4_16(0xD409,1,0x5C);
-		WriteCmdDataIPS_4_16(0xD40A,1,0x00);
-		WriteCmdDataIPS_4_16(0xD40B,1,0x81);
-		WriteCmdDataIPS_4_16(0xD40C,1,0x00);
-		WriteCmdDataIPS_4_16(0xD40D,1,0xA6);
-		WriteCmdDataIPS_4_16(0xD40E,1,0x00);
-		WriteCmdDataIPS_4_16(0xD40F,1,0xE5);
-		WriteCmdDataIPS_4_16(0xD410,1,0x01);
-		WriteCmdDataIPS_4_16(0xD411,1,0x13);
-		WriteCmdDataIPS_4_16(0xD412,1,0x01);
-		WriteCmdDataIPS_4_16(0xD413,1,0x54);
-		WriteCmdDataIPS_4_16(0xD414,1,0x01);
-		WriteCmdDataIPS_4_16(0xD415,1,0x82);
-		WriteCmdDataIPS_4_16(0xD416,1,0x01);
-		WriteCmdDataIPS_4_16(0xD417,1,0xCA);
-		WriteCmdDataIPS_4_16(0xD418,1,0x02);
-		WriteCmdDataIPS_4_16(0xD419,1,0x00);
-		WriteCmdDataIPS_4_16(0xD41A,1,0x02);
-		WriteCmdDataIPS_4_16(0xD41B,1,0x01);
-		WriteCmdDataIPS_4_16(0xD41C,1,0x02);
-		WriteCmdDataIPS_4_16(0xD41D,1,0x34);
-		WriteCmdDataIPS_4_16(0xD41E,1,0x02);
-		WriteCmdDataIPS_4_16(0xD41F,1,0x67);
-		WriteCmdDataIPS_4_16(0xD420,1,0x02);
-		WriteCmdDataIPS_4_16(0xD421,1,0x84);
-		WriteCmdDataIPS_4_16(0xD422,1,0x02);
-		WriteCmdDataIPS_4_16(0xD423,1,0xA4);
-		WriteCmdDataIPS_4_16(0xD424,1,0x02);
-		WriteCmdDataIPS_4_16(0xD425,1,0xB7);
-		WriteCmdDataIPS_4_16(0xD426,1,0x02);
-		WriteCmdDataIPS_4_16(0xD427,1,0xCF);
-		WriteCmdDataIPS_4_16(0xD428,1,0x02);
-		WriteCmdDataIPS_4_16(0xD429,1,0xDE);
-		WriteCmdDataIPS_4_16(0xD42A,1,0x02);
-		WriteCmdDataIPS_4_16(0xD42B,1,0xF2);
-		WriteCmdDataIPS_4_16(0xD42C,1,0x02);
-		WriteCmdDataIPS_4_16(0xD42D,1,0xFE);
-		WriteCmdDataIPS_4_16(0xD42E,1,0x03);
-		WriteCmdDataIPS_4_16(0xD42F,1,0x10);
-		WriteCmdDataIPS_4_16(0xD430,1,0x03);
-		WriteCmdDataIPS_4_16(0xD431,1,0x33);
-		WriteCmdDataIPS_4_16(0xD432,1,0x03);
-		WriteCmdDataIPS_4_16(0xD433,1,0x6D);
-		WriteCmdDataIPS_4_16(0xD500,1,0x00);
-		WriteCmdDataIPS_4_16(0xD501,1,0x33);
-		WriteCmdDataIPS_4_16(0xD502,1,0x00);
-		WriteCmdDataIPS_4_16(0xD503,1,0x34);
-		WriteCmdDataIPS_4_16(0xD504,1,0x00);
-		WriteCmdDataIPS_4_16(0xD505,1,0x3A);
-		WriteCmdDataIPS_4_16(0xD506,1,0x00);
-		WriteCmdDataIPS_4_16(0xD507,1,0x4A);
-		WriteCmdDataIPS_4_16(0xD508,1,0x00);
-		WriteCmdDataIPS_4_16(0xD509,1,0x5C);
-		WriteCmdDataIPS_4_16(0xD50A,1,0x00);
-		WriteCmdDataIPS_4_16(0xD50B,1,0x81);
-		WriteCmdDataIPS_4_16(0xD50C,1,0x00);
-		WriteCmdDataIPS_4_16(0xD50D,1,0xA6);
-		WriteCmdDataIPS_4_16(0xD50E,1,0x00);
-		WriteCmdDataIPS_4_16(0xD50F,1,0xE5);
-		WriteCmdDataIPS_4_16(0xD510,1,0x01);
-		WriteCmdDataIPS_4_16(0xD511,1,0x13);
-		WriteCmdDataIPS_4_16(0xD512,1,0x01);
-		WriteCmdDataIPS_4_16(0xD513,1,0x54);
-		WriteCmdDataIPS_4_16(0xD514,1,0x01);
-		WriteCmdDataIPS_4_16(0xD515,1,0x82);
-		WriteCmdDataIPS_4_16(0xD516,1,0x01);
-		WriteCmdDataIPS_4_16(0xD517,1,0xCA);
-		WriteCmdDataIPS_4_16(0xD518,1,0x02);
-		WriteCmdDataIPS_4_16(0xD519,1,0x00);
-		WriteCmdDataIPS_4_16(0xD51A,1,0x02);
-		WriteCmdDataIPS_4_16(0xD51B,1,0x01);
-		WriteCmdDataIPS_4_16(0xD51C,1,0x02);
-		WriteCmdDataIPS_4_16(0xD51D,1,0x34);
-		WriteCmdDataIPS_4_16(0xD51E,1,0x02);
-		WriteCmdDataIPS_4_16(0xD51F,1,0x67);
-		WriteCmdDataIPS_4_16(0xD520,1,0x02);
-		WriteCmdDataIPS_4_16(0xD521,1,0x84);
-		WriteCmdDataIPS_4_16(0xD522,1,0x02);
-		WriteCmdDataIPS_4_16(0xD523,1,0xA4);
-		WriteCmdDataIPS_4_16(0xD524,1,0x02);
-		WriteCmdDataIPS_4_16(0xD525,1,0xB7);
-		WriteCmdDataIPS_4_16(0xD526,1,0x02);
-		WriteCmdDataIPS_4_16(0xD527,1,0xCF);
-		WriteCmdDataIPS_4_16(0xD528,1,0x02);
-		WriteCmdDataIPS_4_16(0xD529,1,0xDE);
-		WriteCmdDataIPS_4_16(0xD52A,1,0x02);
-		WriteCmdDataIPS_4_16(0xD52B,1,0xF2);
-		WriteCmdDataIPS_4_16(0xD52C,1,0x02);
-		WriteCmdDataIPS_4_16(0xD52D,1,0xFE);
-		WriteCmdDataIPS_4_16(0xD52E,1,0x03);
-		WriteCmdDataIPS_4_16(0xD52F,1,0x10);
-		WriteCmdDataIPS_4_16(0xD530,1,0x03);
-		WriteCmdDataIPS_4_16(0xD531,1,0x33);
-		WriteCmdDataIPS_4_16(0xD532,1,0x03);
-		WriteCmdDataIPS_4_16(0xD533,1,0x6D);
-		WriteCmdDataIPS_4_16(0xD600,1,0x00);
-		WriteCmdDataIPS_4_16(0xD601,1,0x33);
-		WriteCmdDataIPS_4_16(0xD602,1,0x00);
-		WriteCmdDataIPS_4_16(0xD603,1,0x34);
-		WriteCmdDataIPS_4_16(0xD604,1,0x00);
-		WriteCmdDataIPS_4_16(0xD605,1,0x3A);
-		WriteCmdDataIPS_4_16(0xD606,1,0x00);
-		WriteCmdDataIPS_4_16(0xD607,1,0x4A);
-		WriteCmdDataIPS_4_16(0xD608,1,0x00);
-		WriteCmdDataIPS_4_16(0xD609,1,0x5C);
-		WriteCmdDataIPS_4_16(0xD60A,1,0x00);
-		WriteCmdDataIPS_4_16(0xD60B,1,0x81);
-		WriteCmdDataIPS_4_16(0xD60C,1,0x00);
-		WriteCmdDataIPS_4_16(0xD60D,1,0xA6);
-		WriteCmdDataIPS_4_16(0xD60E,1,0x00);
-		WriteCmdDataIPS_4_16(0xD60F,1,0xE5);
-		WriteCmdDataIPS_4_16(0xD610,1,0x01);
-		WriteCmdDataIPS_4_16(0xD611,1,0x13);
-		WriteCmdDataIPS_4_16(0xD612,1,0x01);
-		WriteCmdDataIPS_4_16(0xD613,1,0x54);
-		WriteCmdDataIPS_4_16(0xD614,1,0x01);
-		WriteCmdDataIPS_4_16(0xD615,1,0x82);
-		WriteCmdDataIPS_4_16(0xD616,1,0x01);
-		WriteCmdDataIPS_4_16(0xD617,1,0xCA);
-		WriteCmdDataIPS_4_16(0xD618,1,0x02);
-		WriteCmdDataIPS_4_16(0xD619,1,0x00);
-		WriteCmdDataIPS_4_16(0xD61A,1,0x02);
-		WriteCmdDataIPS_4_16(0xD61B,1,0x01);
-		WriteCmdDataIPS_4_16(0xD61C,1,0x02);
-		WriteCmdDataIPS_4_16(0xD61D,1,0x34);
-		WriteCmdDataIPS_4_16(0xD61E,1,0x02);
-		WriteCmdDataIPS_4_16(0xD61F,1,0x67);
-		WriteCmdDataIPS_4_16(0xD620,1,0x02);
-		WriteCmdDataIPS_4_16(0xD621,1,0x84);
-		WriteCmdDataIPS_4_16(0xD622,1,0x02);
-		WriteCmdDataIPS_4_16(0xD623,1,0xA4);
-		WriteCmdDataIPS_4_16(0xD624,1,0x02);
-		WriteCmdDataIPS_4_16(0xD625,1,0xB7);
-		WriteCmdDataIPS_4_16(0xD626,1,0x02);
-		WriteCmdDataIPS_4_16(0xD627,1,0xCF);
-		WriteCmdDataIPS_4_16(0xD628,1,0x02);
-		WriteCmdDataIPS_4_16(0xD629,1,0xDE);
-		WriteCmdDataIPS_4_16(0xD62A,1,0x02);
-		WriteCmdDataIPS_4_16(0xD62B,1,0xF2);
-		WriteCmdDataIPS_4_16(0xD62C,1,0x02);
-		WriteCmdDataIPS_4_16(0xD62D,1,0xFE);
-		WriteCmdDataIPS_4_16(0xD62E,1,0x03);
-		WriteCmdDataIPS_4_16(0xD62F,1,0x10);
-		WriteCmdDataIPS_4_16(0xD630,1,0x03);
-		WriteCmdDataIPS_4_16(0xD631,1,0x33);
-		WriteCmdDataIPS_4_16(0xD632,1,0x03);
-		WriteCmdDataIPS_4_16(0xD633,1,0x6D);
-		//LV2 Page 0 enable
-		WriteCmdDataIPS_4_16(0xF000,1,0x55);
-		WriteCmdDataIPS_4_16(0xF001,1,0xAA);
-		WriteCmdDataIPS_4_16(0xF002,1,0x52);
-		WriteCmdDataIPS_4_16(0xF003,1,0x08);
-		WriteCmdDataIPS_4_16(0xF004,1,0x00);
-		//Display control
-		WriteCmdDataIPS_4_16(0xB100,1, 0xCC);
-		WriteCmdDataIPS_4_16(0xB101,1, 0x00);
-		//Source hold time
-		WriteCmdDataIPS_4_16(0xB600,1,0x05);
-		//Gate EQ control
-		WriteCmdDataIPS_4_16(0xB700,1,0x70);
-		WriteCmdDataIPS_4_16(0xB701,1,0x70);
-		//Source EQ control (Mode 2)
-		WriteCmdDataIPS_4_16(0xB800,1,0x01);
-		WriteCmdDataIPS_4_16(0xB801,1,0x03);
-		WriteCmdDataIPS_4_16(0xB802,1,0x03);
-		WriteCmdDataIPS_4_16(0xB803,1,0x03);
-		//Inversion mode (2-dot)
-		WriteCmdDataIPS_4_16(0xBC00,1,0x02);
-		WriteCmdDataIPS_4_16(0xBC01,1,0x00);
-		WriteCmdDataIPS_4_16(0xBC02,1,0x00);
-		//Timing control 4H w/ 4-delay
-		WriteCmdDataIPS_4_16(0xC900,1,0xD0);
-		WriteCmdDataIPS_4_16(0xC901,1,0x02);
-		WriteCmdDataIPS_4_16(0xC902,1,0x50);
-		WriteCmdDataIPS_4_16(0xC903,1,0x50);
-		WriteCmdDataIPS_4_16(0xC904,1,0x50);
-		//WriteCmdDataIPS_4_16(0x3500,1,0x00);
-		WriteCmdDataIPS_4_16(0x3A00,1,0x66);  //16-bit/pixel RGB666
-#endif
-
-        if ((t & 0x7f) == 0x55){
+		//MMPrintString("ID1=");PIntH(t);MMPrintString("\r\n");
+        if ((t & 0x7F) == 0x55){   //was ((t & 0x7F) == 0x55) //((t & 0x71) == 0x51)
         	// NT35510 IPS Display detected. Identified in code by (Option.SSDspeed==1)
             Option.SSDspeed = 1;
             SaveOptions();
-			WriteCmdDataIPS_4_16(0xF000,1,0x55);
-			WriteCmdDataIPS_4_16(0xF001,1,0xAA);
-			WriteCmdDataIPS_4_16(0xF002,1,0x52);
-			WriteCmdDataIPS_4_16(0xF003,1,0x08);
-			WriteCmdDataIPS_4_16(0xF004,1,0x01);
-			//#AVDD:manual,1,
-			WriteCmdDataIPS_4_16(0xB600,3,0x34);
-			//WriteCmdDataIPS_4_16(0xB601,1,0x34);
-			//WriteCmdDataIPS_4_16(0xB602,1,0x34);
-			WriteCmdDataIPS_4_16(0xB000,3,0x0D);//09
-			//WriteCmdDataIPS_4_16(0xB001,1,0x0D);
-			//WriteCmdDataIPS_4_16(0xB002,1,0x0D);
-			//#AVEE:manual,1,-6V
-			WriteCmdDataIPS_4_16(0xB700,3,0x24);
-			//WriteCmdDataIPS_4_16(0xB701,1,0x24);
-			//WriteCmdDataIPS_4_16(0xB702,1,0x24);
-			WriteCmdDataIPS_4_16(0xB100,3,0x0D);
-			//WriteCmdDataIPS_4_16(0xB101,1,0x0D);
-			//WriteCmdDataIPS_4_16(0xB102,1,0x0D);
-			//#PowerControlfor
-			//VCL
-			WriteCmdDataIPS_4_16(0xB800,3,0x24);
-			//WriteCmdDataIPS_4_16(0xB801,1,0x24);
-			//WriteCmdDataIPS_4_16(0xB802,1,0x24);
-			WriteCmdDataIPS_4_16(0xB200,1,0x00);
-			//#VGH:ClampEnable,1,
-			WriteCmdDataIPS_4_16(0xB900,3,0x24);
-			//WriteCmdDataIPS_4_16(0xB901,1,0x24);
-			//WriteCmdDataIPS_4_16(0xB902,1,0x24);
-			WriteCmdDataIPS_4_16(0xB300,3,0x05);
-			//WriteCmdDataIPS_4_16(0xB301,1,0x05);
-			//WriteCmdDataIPS_4_16(0xB302,1,0x05);
-			WriteCmdDataIPS_4_16(0xBF00,1,0x01);
-			//#VGL(LVGL):
-			WriteCmdDataIPS_4_16(0xBA00,3,0x34);
-			//WriteCmdDataIPS_4_16(0xBA01,1,0x34);
-			//WriteCmdDataIPS_4_16(0xBA02,1,0x34);
-			//#VGL_REG(VGLO)
-			WriteCmdDataIPS_4_16(0xB500,3,0x0B);
-			//WriteCmdDataIPS_4_16(0xB501,1,0x0B);
-			//WriteCmdDataIPS_4_16(0xB502,1,0x0B);
-			//#VGMP/VGSP:
-			WriteCmdDataIPS_4_16(0xBC00,1,0x00);
-			WriteCmdDataIPS_4_16(0xBC01,1,0xA3);
-			WriteCmdDataIPS_4_16(0xBC02,1,0x00);
-			//#VGMN/VGSN
-			WriteCmdDataIPS_4_16(0xBD00,1,0x00);
-			WriteCmdDataIPS_4_16(0xBD01,1,0xA3);
-			WriteCmdDataIPS_4_16(0xBD02,1,0x00);
-			//#VCOM=-0.1
-			WriteCmdDataIPS_4_16(0xBE00,1,0x00);
-			WriteCmdDataIPS_4_16(0xBE01,1,0x63);//4f
-				//VCOMH+0x01;
-			//#R+
-			WriteCmdDataIPS_4_16(0xD100,1,0x00);
-			WriteCmdDataIPS_4_16(0xD101,1,0x37);
-			WriteCmdDataIPS_4_16(0xD102,1,0x00);
-			WriteCmdDataIPS_4_16(0xD103,1,0x52);
-			WriteCmdDataIPS_4_16(0xD104,1,0x00);
-			WriteCmdDataIPS_4_16(0xD105,1,0x7B);
-			WriteCmdDataIPS_4_16(0xD106,1,0x00);
-			WriteCmdDataIPS_4_16(0xD107,1,0x99);
-			WriteCmdDataIPS_4_16(0xD108,1,0x00);
-			WriteCmdDataIPS_4_16(0xD109,1,0xB1);
-			WriteCmdDataIPS_4_16(0xD10A,1,0x00);
-			WriteCmdDataIPS_4_16(0xD10B,1,0xD2);
-			WriteCmdDataIPS_4_16(0xD10C,1,0x00);
-			WriteCmdDataIPS_4_16(0xD10D,1,0xF6);
-			WriteCmdDataIPS_4_16(0xD10E,1,0x01);
-			WriteCmdDataIPS_4_16(0xD10F,1,0x27);
-			WriteCmdDataIPS_4_16(0xD110,1,0x01);
-			WriteCmdDataIPS_4_16(0xD111,1,0x4E);
-			WriteCmdDataIPS_4_16(0xD112,1,0x01);
-			WriteCmdDataIPS_4_16(0xD113,1,0x8C);
-			WriteCmdDataIPS_4_16(0xD114,1,0x01);
-			WriteCmdDataIPS_4_16(0xD115,1,0xBE);
-			WriteCmdDataIPS_4_16(0xD116,1,0x02);
-			WriteCmdDataIPS_4_16(0xD117,1,0x0B);
-			WriteCmdDataIPS_4_16(0xD118,1,0x02);
-			WriteCmdDataIPS_4_16(0xD119,1,0x48);
-			WriteCmdDataIPS_4_16(0xD11A,1,0x02);
-			WriteCmdDataIPS_4_16(0xD11B,1,0x4A);
-			WriteCmdDataIPS_4_16(0xD11C,1,0x02);
-			WriteCmdDataIPS_4_16(0xD11D,1,0x7E);
-			WriteCmdDataIPS_4_16(0xD11E,1,0x02);
-			WriteCmdDataIPS_4_16(0xD11F,1,0xBC);
-			WriteCmdDataIPS_4_16(0xD120,1,0x02);
-			WriteCmdDataIPS_4_16(0xD121,1,0xE1);
-			WriteCmdDataIPS_4_16(0xD122,1,0x03);
-			WriteCmdDataIPS_4_16(0xD123,1,0x10);
-			WriteCmdDataIPS_4_16(0xD124,1,0x03);
-			WriteCmdDataIPS_4_16(0xD125,1,0x31);
-			WriteCmdDataIPS_4_16(0xD126,1,0x03);
-			WriteCmdDataIPS_4_16(0xD127,1,0x5A);
-			WriteCmdDataIPS_4_16(0xD128,1,0x03);
-			WriteCmdDataIPS_4_16(0xD129,1,0x73);
-			WriteCmdDataIPS_4_16(0xD12A,1,0x03);
-			WriteCmdDataIPS_4_16(0xD12B,1,0x94);
-			WriteCmdDataIPS_4_16(0xD12C,1,0x03);
-			WriteCmdDataIPS_4_16(0xD12D,1,0x9F);
-			WriteCmdDataIPS_4_16(0xD12E,1,0x03);
-			WriteCmdDataIPS_4_16(0xD12F,1,0xB3);
-			WriteCmdDataIPS_4_16(0xD130,1,0x03);
-			WriteCmdDataIPS_4_16(0xD131,1,0xB9);
-			WriteCmdDataIPS_4_16(0xD132,1,0x03);
-			WriteCmdDataIPS_4_16(0xD133,1,0xC1);
-			//#G+
-			WriteCmdDataIPS_4_16(0xD200,1,0x00);
-			WriteCmdDataIPS_4_16(0xD201,1,0x37);
-			WriteCmdDataIPS_4_16(0xD202,1,0x00);
-			WriteCmdDataIPS_4_16(0xD203,1,0x52);
-			WriteCmdDataIPS_4_16(0xD204,1,0x00);
-			WriteCmdDataIPS_4_16(0xD205,1,0x7B);
-			WriteCmdDataIPS_4_16(0xD206,1,0x00);
-			WriteCmdDataIPS_4_16(0xD207,1,0x99);
-			WriteCmdDataIPS_4_16(0xD208,1,0x00);
-			WriteCmdDataIPS_4_16(0xD209,1,0xB1);
-			WriteCmdDataIPS_4_16(0xD20A,1,0x00);
-			WriteCmdDataIPS_4_16(0xD20B,1,0xD2);
-			WriteCmdDataIPS_4_16(0xD20C,1,0x00);
-			WriteCmdDataIPS_4_16(0xD20D,1,0xF6);
-			WriteCmdDataIPS_4_16(0xD20E,1,0x01);
-			WriteCmdDataIPS_4_16(0xD20F,1,0x27);
-			WriteCmdDataIPS_4_16(0xD210,1,0x01);
-			WriteCmdDataIPS_4_16(0xD211,1,0x4E);
-			WriteCmdDataIPS_4_16(0xD212,1,0x01);
-			WriteCmdDataIPS_4_16(0xD213,1,0x8C);
-			WriteCmdDataIPS_4_16(0xD214,1,0x01);
-			WriteCmdDataIPS_4_16(0xD215,1,0xBE);
-			WriteCmdDataIPS_4_16(0xD216,1,0x02);
-			WriteCmdDataIPS_4_16(0xD217,1,0x0B);
-			WriteCmdDataIPS_4_16(0xD218,1,0x02);
-			WriteCmdDataIPS_4_16(0xD219,1,0x48);
-			WriteCmdDataIPS_4_16(0xD21A,1,0x02);
-			WriteCmdDataIPS_4_16(0xD21B,1,0x4A);
-			WriteCmdDataIPS_4_16(0xD21C,1,0x02);
-			WriteCmdDataIPS_4_16(0xD21D,1,0x7E);
-			WriteCmdDataIPS_4_16(0xD21E,1,0x02);
-			WriteCmdDataIPS_4_16(0xD21F,1,0xBC);
-			WriteCmdDataIPS_4_16(0xD220,1,0x02);
-			WriteCmdDataIPS_4_16(0xD221,1,0xE1);
-			WriteCmdDataIPS_4_16(0xD222,1,0x03);
-			WriteCmdDataIPS_4_16(0xD223,1,0x10);
-			WriteCmdDataIPS_4_16(0xD224,1,0x03);
-			WriteCmdDataIPS_4_16(0xD225,1,0x31);
-			WriteCmdDataIPS_4_16(0xD226,1,0x03);
-			WriteCmdDataIPS_4_16(0xD227,1,0x5A);
-			WriteCmdDataIPS_4_16(0xD228,1,0x03);
-			WriteCmdDataIPS_4_16(0xD229,1,0x73);
-			WriteCmdDataIPS_4_16(0xD22A,1,0x03);
-			WriteCmdDataIPS_4_16(0xD22B,1,0x94);
-			WriteCmdDataIPS_4_16(0xD22C,1,0x03);
-			WriteCmdDataIPS_4_16(0xD22D,1,0x9F);
-			WriteCmdDataIPS_4_16(0xD22E,1,0x03);
-			WriteCmdDataIPS_4_16(0xD22F,1,0xB3);
-			WriteCmdDataIPS_4_16(0xD230,1,0x03);
-			WriteCmdDataIPS_4_16(0xD231,1,0xB9);
-			WriteCmdDataIPS_4_16(0xD232,1,0x03);
-			WriteCmdDataIPS_4_16(0xD233,1,0xC1);
-			//#B+
-			WriteCmdDataIPS_4_16(0xD300,1,0x00);
-			WriteCmdDataIPS_4_16(0xD301,1,0x37);
-			WriteCmdDataIPS_4_16(0xD302,1,0x00);
-			WriteCmdDataIPS_4_16(0xD303,1,0x52);
-			WriteCmdDataIPS_4_16(0xD304,1,0x00);
-			WriteCmdDataIPS_4_16(0xD305,1,0x7B);
-			WriteCmdDataIPS_4_16(0xD306,1,0x00);
-			WriteCmdDataIPS_4_16(0xD307,1,0x99);
-			WriteCmdDataIPS_4_16(0xD308,1,0x00);
-			WriteCmdDataIPS_4_16(0xD309,1,0xB1);
-			WriteCmdDataIPS_4_16(0xD30A,1,0x00);
-			WriteCmdDataIPS_4_16(0xD30B,1,0xD2);
-			WriteCmdDataIPS_4_16(0xD30C,1,0x00);
-			WriteCmdDataIPS_4_16(0xD30D,1,0xF6);
-			WriteCmdDataIPS_4_16(0xD30E,1,0x01);
-			WriteCmdDataIPS_4_16(0xD30F,1,0x27);
-			WriteCmdDataIPS_4_16(0xD310,1,0x01);
-			WriteCmdDataIPS_4_16(0xD311,1,0x4E);
-			WriteCmdDataIPS_4_16(0xD312,1,0x01);
-			WriteCmdDataIPS_4_16(0xD313,1,0x8C);
-			WriteCmdDataIPS_4_16(0xD314,1,0x01);
-			WriteCmdDataIPS_4_16(0xD315,1,0xBE);
-			WriteCmdDataIPS_4_16(0xD316,1,0x02);
-			WriteCmdDataIPS_4_16(0xD317,1,0x0B);
-			WriteCmdDataIPS_4_16(0xD318,1,0x02);
-			WriteCmdDataIPS_4_16(0xD319,1,0x48);
-			WriteCmdDataIPS_4_16(0xD31A,1,0x02);
-			WriteCmdDataIPS_4_16(0xD31B,1,0x4A);
-			WriteCmdDataIPS_4_16(0xD31C,1,0x02);
-			WriteCmdDataIPS_4_16(0xD31D,1,0x7E);
-			WriteCmdDataIPS_4_16(0xD31E,1,0x02);
-			WriteCmdDataIPS_4_16(0xD31F,1,0xBC);
-			WriteCmdDataIPS_4_16(0xD320,1,0x02);
-			WriteCmdDataIPS_4_16(0xD321,1,0xE1);
-			WriteCmdDataIPS_4_16(0xD322,1,0x03);
-			WriteCmdDataIPS_4_16(0xD323,1,0x10);
-			WriteCmdDataIPS_4_16(0xD324,1,0x03);
-			WriteCmdDataIPS_4_16(0xD325,1,0x31);
-			WriteCmdDataIPS_4_16(0xD326,1,0x03);
-			WriteCmdDataIPS_4_16(0xD327,1,0x5A);
-			WriteCmdDataIPS_4_16(0xD328,1,0x03);
-			WriteCmdDataIPS_4_16(0xD329,1,0x73);
-			WriteCmdDataIPS_4_16(0xD32A,1,0x03);
-			WriteCmdDataIPS_4_16(0xD32B,1,0x94);
-			WriteCmdDataIPS_4_16(0xD32C,1,0x03);
-			WriteCmdDataIPS_4_16(0xD32D,1,0x9F);
-			WriteCmdDataIPS_4_16(0xD32E,1,0x03);
-			WriteCmdDataIPS_4_16(0xD32F,1,0xB3);
-			WriteCmdDataIPS_4_16(0xD330,1,0x03);
-			WriteCmdDataIPS_4_16(0xD331,1,0xB9);
-			WriteCmdDataIPS_4_16(0xD332,1,0x03);
-			WriteCmdDataIPS_4_16(0xD333,1,0xC1);
-			//#R-///////////////////////////////////////////
-			WriteCmdDataIPS_4_16(0xD400,1,0x00);
-			WriteCmdDataIPS_4_16(0xD401,1,0x37);
-			WriteCmdDataIPS_4_16(0xD402,1,0x00);
-			WriteCmdDataIPS_4_16(0xD403,1,0x52);
-			WriteCmdDataIPS_4_16(0xD404,1,0x00);
-			WriteCmdDataIPS_4_16(0xD405,1,0x7B);
-			WriteCmdDataIPS_4_16(0xD406,1,0x00);
-			WriteCmdDataIPS_4_16(0xD407,1,0x99);
-			WriteCmdDataIPS_4_16(0xD408,1,0x00);
-			WriteCmdDataIPS_4_16(0xD409,1,0xB1);
-			WriteCmdDataIPS_4_16(0xD40A,1,0x00);
-			WriteCmdDataIPS_4_16(0xD40B,1,0xD2);
-			WriteCmdDataIPS_4_16(0xD40C,1,0x00);
-			WriteCmdDataIPS_4_16(0xD40D,1,0xF6);
-			WriteCmdDataIPS_4_16(0xD40E,1,0x01);
-			WriteCmdDataIPS_4_16(0xD40F,1,0x27);
-			WriteCmdDataIPS_4_16(0xD410,1,0x01);
-			WriteCmdDataIPS_4_16(0xD411,1,0x4E);
-			WriteCmdDataIPS_4_16(0xD412,1,0x01);
-			WriteCmdDataIPS_4_16(0xD413,1,0x8C);
-			WriteCmdDataIPS_4_16(0xD414,1,0x01);
-			WriteCmdDataIPS_4_16(0xD415,1,0xBE);
-			WriteCmdDataIPS_4_16(0xD416,1,0x02);
-			WriteCmdDataIPS_4_16(0xD417,1,0x0B);
-			WriteCmdDataIPS_4_16(0xD418,1,0x02);
-			WriteCmdDataIPS_4_16(0xD419,1,0x48);
-			WriteCmdDataIPS_4_16(0xD41A,1,0x02);
-			WriteCmdDataIPS_4_16(0xD41B,1,0x4A);
-			WriteCmdDataIPS_4_16(0xD41C,1,0x02);
-			WriteCmdDataIPS_4_16(0xD41D,1,0x7E);
-			WriteCmdDataIPS_4_16(0xD41E,1,0x02);
-			WriteCmdDataIPS_4_16(0xD41F,1,0xBC);
-			WriteCmdDataIPS_4_16(0xD420,1,0x02);
-			WriteCmdDataIPS_4_16(0xD421,1,0xE1);
-			WriteCmdDataIPS_4_16(0xD422,1,0x03);
-			WriteCmdDataIPS_4_16(0xD423,1,0x10);
-			WriteCmdDataIPS_4_16(0xD424,1,0x03);
-			WriteCmdDataIPS_4_16(0xD425,1,0x31);
-			WriteCmdDataIPS_4_16(0xD426,1,0x03);
-			WriteCmdDataIPS_4_16(0xD427,1,0x5A);
-			WriteCmdDataIPS_4_16(0xD428,1,0x03);
-			WriteCmdDataIPS_4_16(0xD429,1,0x73);
-			WriteCmdDataIPS_4_16(0xD42A,1,0x03);
-			WriteCmdDataIPS_4_16(0xD42B,1,0x94);
-			WriteCmdDataIPS_4_16(0xD42C,1,0x03);
-			WriteCmdDataIPS_4_16(0xD42D,1,0x9F);
-			WriteCmdDataIPS_4_16(0xD42E,1,0x03);
-			WriteCmdDataIPS_4_16(0xD42F,1,0xB3);
-			WriteCmdDataIPS_4_16(0xD430,1,0x03);
-			WriteCmdDataIPS_4_16(0xD431,1,0xB9);
-			WriteCmdDataIPS_4_16(0xD432,1,0x03);
-			WriteCmdDataIPS_4_16(0xD433,1,0xC1);
-			//#G-//////////////////////////////////////////////
-			WriteCmdDataIPS_4_16(0xD500,1,0x00);
-			WriteCmdDataIPS_4_16(0xD501,1,0x37);
-			WriteCmdDataIPS_4_16(0xD502,1,0x00);
-			WriteCmdDataIPS_4_16(0xD503,1,0x52);
-			WriteCmdDataIPS_4_16(0xD504,1,0x00);
-			WriteCmdDataIPS_4_16(0xD505,1,0x7B);
-			WriteCmdDataIPS_4_16(0xD506,1,0x00);
-			WriteCmdDataIPS_4_16(0xD507,1,0x99);
-			WriteCmdDataIPS_4_16(0xD508,1,0x00);
-			WriteCmdDataIPS_4_16(0xD509,1,0xB1);
-			WriteCmdDataIPS_4_16(0xD50A,1,0x00);
-			WriteCmdDataIPS_4_16(0xD50B,1,0xD2);
-			WriteCmdDataIPS_4_16(0xD50C,1,0x00);
-			WriteCmdDataIPS_4_16(0xD50D,1,0xF6);
-			WriteCmdDataIPS_4_16(0xD50E,1,0x01);
-			WriteCmdDataIPS_4_16(0xD50F,1,0x27);
-			WriteCmdDataIPS_4_16(0xD510,1,0x01);
-			WriteCmdDataIPS_4_16(0xD511,1,0x4E);
-			WriteCmdDataIPS_4_16(0xD512,1,0x01);
-			WriteCmdDataIPS_4_16(0xD513,1,0x8C);
-			WriteCmdDataIPS_4_16(0xD514,1,0x01);
-			WriteCmdDataIPS_4_16(0xD515,1,0xBE);
-			WriteCmdDataIPS_4_16(0xD516,1,0x02);
-			WriteCmdDataIPS_4_16(0xD517,1,0x0B);
-			WriteCmdDataIPS_4_16(0xD518,1,0x02);
-			WriteCmdDataIPS_4_16(0xD519,1,0x48);
-			WriteCmdDataIPS_4_16(0xD51A,1,0x02);
-			WriteCmdDataIPS_4_16(0xD51B,1,0x4A);
-			WriteCmdDataIPS_4_16(0xD51C,1,0x02);
-			WriteCmdDataIPS_4_16(0xD51D,1,0x7E);
-			WriteCmdDataIPS_4_16(0xD51E,1,0x02);
-			WriteCmdDataIPS_4_16(0xD51F,1,0xBC);
-			WriteCmdDataIPS_4_16(0xD520,1,0x02);
-			WriteCmdDataIPS_4_16(0xD521,1,0xE1);
-			WriteCmdDataIPS_4_16(0xD522,1,0x03);
-			WriteCmdDataIPS_4_16(0xD523,1,0x10);
-			WriteCmdDataIPS_4_16(0xD524,1,0x03);
-			WriteCmdDataIPS_4_16(0xD525,1,0x31);
-			WriteCmdDataIPS_4_16(0xD526,1,0x03);
-			WriteCmdDataIPS_4_16(0xD527,1,0x5A);
-			WriteCmdDataIPS_4_16(0xD528,1,0x03);
-			WriteCmdDataIPS_4_16(0xD529,1,0x73);
-			WriteCmdDataIPS_4_16(0xD52A,1,0x03);
-			WriteCmdDataIPS_4_16(0xD52B,1,0x94);
-			WriteCmdDataIPS_4_16(0xD52C,1,0x03);
-			WriteCmdDataIPS_4_16(0xD52D,1,0x9F);
-			WriteCmdDataIPS_4_16(0xD52E,1,0x03);
-			WriteCmdDataIPS_4_16(0xD52F,1,0xB3);
-			WriteCmdDataIPS_4_16(0xD530,1,0x03);
-			WriteCmdDataIPS_4_16(0xD531,1,0xB9);
-			WriteCmdDataIPS_4_16(0xD532,1,0x03);
-			WriteCmdDataIPS_4_16(0xD533,1,0xC1);
-			//#B-///////////////////////////////
-			WriteCmdDataIPS_4_16(0xD600,1,0x00);
-			WriteCmdDataIPS_4_16(0xD601,1,0x37);
-			WriteCmdDataIPS_4_16(0xD602,1,0x00);
-			WriteCmdDataIPS_4_16(0xD603,1,0x52);
-			WriteCmdDataIPS_4_16(0xD604,1,0x00);
-			WriteCmdDataIPS_4_16(0xD605,1,0x7B);
-			WriteCmdDataIPS_4_16(0xD606,1,0x00);
-			WriteCmdDataIPS_4_16(0xD607,1,0x99);
-			WriteCmdDataIPS_4_16(0xD608,1,0x00);
-			WriteCmdDataIPS_4_16(0xD609,1,0xB1);
-			WriteCmdDataIPS_4_16(0xD60A,1,0x00);
-			WriteCmdDataIPS_4_16(0xD60B,1,0xD2);
-			WriteCmdDataIPS_4_16(0xD60C,1,0x00);
-			WriteCmdDataIPS_4_16(0xD60D,1,0xF6);
-			WriteCmdDataIPS_4_16(0xD60E,1,0x01);
-			WriteCmdDataIPS_4_16(0xD60F,1,0x27);
-			WriteCmdDataIPS_4_16(0xD610,1,0x01);
-			WriteCmdDataIPS_4_16(0xD611,1,0x4E);
-			WriteCmdDataIPS_4_16(0xD612,1,0x01);
-			WriteCmdDataIPS_4_16(0xD613,1,0x8C);
-			WriteCmdDataIPS_4_16(0xD614,1,0x01);
-			WriteCmdDataIPS_4_16(0xD615,1,0xBE);
-			WriteCmdDataIPS_4_16(0xD616,1,0x02);
-			WriteCmdDataIPS_4_16(0xD617,1,0x0B);
-			WriteCmdDataIPS_4_16(0xD618,1,0x02);
-			WriteCmdDataIPS_4_16(0xD619,1,0x48);
-			WriteCmdDataIPS_4_16(0xD61A,1,0x02);
-			WriteCmdDataIPS_4_16(0xD61B,1,0x4A);
-			WriteCmdDataIPS_4_16(0xD61C,1,0x02);
-			WriteCmdDataIPS_4_16(0xD61D,1,0x7E);
-			WriteCmdDataIPS_4_16(0xD61E,1,0x02);
-			WriteCmdDataIPS_4_16(0xD61F,1,0xBC);
-			WriteCmdDataIPS_4_16(0xD620,1,0x02);
-			WriteCmdDataIPS_4_16(0xD621,1,0xE1);
-			WriteCmdDataIPS_4_16(0xD622,1,0x03);
-			WriteCmdDataIPS_4_16(0xD623,1,0x10);
-			WriteCmdDataIPS_4_16(0xD624,1,0x03);
-			WriteCmdDataIPS_4_16(0xD625,1,0x31);
-			WriteCmdDataIPS_4_16(0xD626,1,0x03);
-			WriteCmdDataIPS_4_16(0xD627,1,0x5A);
-			WriteCmdDataIPS_4_16(0xD628,1,0x03);
-			WriteCmdDataIPS_4_16(0xD629,1,0x73);
-			WriteCmdDataIPS_4_16(0xD62A,1,0x03);
-			WriteCmdDataIPS_4_16(0xD62B,1,0x94);
-			WriteCmdDataIPS_4_16(0xD62C,1,0x03);
-			WriteCmdDataIPS_4_16(0xD62D,1,0x9F);
-			WriteCmdDataIPS_4_16(0xD62E,1,0x03);
-			WriteCmdDataIPS_4_16(0xD62F,1,0xB3);
-			WriteCmdDataIPS_4_16(0xD630,1,0x03);
-			WriteCmdDataIPS_4_16(0xD631,1,0xB9);
-			WriteCmdDataIPS_4_16(0xD632,1,0x03);
-			WriteCmdDataIPS_4_16(0xD633,1,0xC1);
-			//#EnablePage0
-			WriteCmdDataIPS_4_16(0xF000,1,0x55);
-			WriteCmdDataIPS_4_16(0xF001,1,0xAA);
-			WriteCmdDataIPS_4_16(0xF002,1,0x52);
-			WriteCmdDataIPS_4_16(0xF003,1,0x08);
-			WriteCmdDataIPS_4_16(0xF004,1,0x00);
-			//#RGBI/FSetting
-			WriteCmdDataIPS_4_16(0xB000,1,0x08);
-			WriteCmdDataIPS_4_16(0xB001,1,0x05);
-			WriteCmdDataIPS_4_16(0xB002,1,0x02);
-			WriteCmdDataIPS_4_16(0xB003,1,0x05);
-			WriteCmdDataIPS_4_16(0xB004,1,0x02);
-			//##SDT:
-			WriteCmdDataIPS_4_16(0xB600,1,0x08);
-			WriteCmdDataIPS_4_16(0xB500,1,0x50);//480x800
-			//##GateEQ:
-			WriteCmdDataIPS_4_16(0xB700,2,0x00);
-			//WriteCmdDataIPS_4_16(0xB701,1,0x00);
-			//##SourceEQ:
-			WriteCmdDataIPS_4_16(0xB800,1,0x01);
-			WriteCmdDataIPS_4_16(0xB801,3,0x05);
-			//WriteCmdDataIPS_4_16(0xB802,1,0x05);
-			//WriteCmdDataIPS_4_16(0xB803,1,0x05);
-			//#Inversion:Columninversion(NVT)
-			WriteCmdDataIPS_4_16(0xBC00,3,0x00);
-			//WriteCmdDataIPS_4_16(0xBC01,1,0x00);
-			//WriteCmdDataIPS_4_16(0xBC02,1,0x00);
-			//#BOE'sSetting(default)
-			WriteCmdDataIPS_4_16(0xCC00,1,0x03);
-			WriteCmdDataIPS_4_16(0xCC01,2,0x00);
-			//WriteCmdDataIPS_4_16(0xCC02,1,0x00);
-			//#DisplayTiming:
-			WriteCmdDataIPS_4_16(0xBD00,1,0x01);
-			WriteCmdDataIPS_4_16(0xBD01,1,0x84);
-			WriteCmdDataIPS_4_16(0xBD02,1,0x07);
-			WriteCmdDataIPS_4_16(0xBD03,1,0x31);
-			WriteCmdDataIPS_4_16(0xBD04,1,0x00);
-			WriteCmdDataIPS_4_16(0xBA00,1,0x01);
-			WriteCmdDataIPS_4_16(0xFF00,1,0xAA);
-			WriteCmdDataIPS_4_16(0xFF01,1,0x55);
-			WriteCmdDataIPS_4_16(0xFF02,1,0x25);
-			WriteCmdDataIPS_4_16(0xFF03,1,0x01);
-			WriteCmdDataIPS_4_16(0x3500,1,0x00);
-			WriteCmdDataIPS_4_16(0x3A00,1,0x66); // 55=Colour 565 66=Colour 666 77=Colour 888
-		}else{
+            SendCommand16Block(NT35510_16Init);
+ 		}else{
 		//============ OTM8009A+HSD3.97 20140613 ===============================================//
-		Option.SSDspeed = 0;
-		WriteCmdDataIPS_4_16(0xff00,1,0x80); //enable access command2
-		WriteCmdDataIPS_4_16(0xff01,1,0x09); //enable access command2
-		WriteCmdDataIPS_4_16(0xff02,1,0x01); //enable access command2
-		WriteCmdDataIPS_4_16(0xff80,1,0x80); //enable access command2
-		WriteCmdDataIPS_4_16(0xff81,1,0x09); //enable access command2
-
-
-		WriteCmdDataIPS_4_16(0xff03,1,0x01); //DON?T KNOW ???
-		WriteCmdDataIPS_4_16(0xc5b1,1,0xA9); //power control
-		WriteCmdDataIPS_4_16(0xc591,1,0x0F); //power control
-		WriteCmdDataIPS_4_16(0xc0B4,1,0x50);
-
-		//panel driving mode : column inversion
-
-		/* Gamma Correction 2.2+ Setting */
-		WriteCmdDataIPS_4_16(0xE100,1,0x00);
-		WriteCmdDataIPS_4_16(0xE101,1,0x09);
-		WriteCmdDataIPS_4_16(0xE102,1,0x0F);
-		WriteCmdDataIPS_4_16(0xE103,1,0x0E);
-		WriteCmdDataIPS_4_16(0xE104,1,0x07);
-		WriteCmdDataIPS_4_16(0xE105,1,0x10);
-		WriteCmdDataIPS_4_16(0xE106,1,0x0B);
-		WriteCmdDataIPS_4_16(0xE107,1,0x0A);
-		WriteCmdDataIPS_4_16(0xE108,1,0x04);
-		WriteCmdDataIPS_4_16(0xE109,1,0x07);
-		WriteCmdDataIPS_4_16(0xE10A,1,0x0B);
-		WriteCmdDataIPS_4_16(0xE10B,1,0x08);
-		WriteCmdDataIPS_4_16(0xE10C,1,0x0F);
-		WriteCmdDataIPS_4_16(0xE10D,1,0x10);
-		WriteCmdDataIPS_4_16(0xE10E,1,0x0A);
-		WriteCmdDataIPS_4_16(0xE10F,1,0x01);
-		/* Gamma Correction 2.2- Setting */
-		WriteCmdDataIPS_4_16(0xE200,1,0x00);
-		WriteCmdDataIPS_4_16(0xE201,1,0x09);
-		WriteCmdDataIPS_4_16(0xE202,1,0x0F);
-		WriteCmdDataIPS_4_16(0xE203,1,0x0E);
-		WriteCmdDataIPS_4_16(0xE204,1,0x07);
-		WriteCmdDataIPS_4_16(0xE205,1,0x10);
-		WriteCmdDataIPS_4_16(0xE206,1,0x0B);
-		WriteCmdDataIPS_4_16(0xE207,1,0x0A);
-		WriteCmdDataIPS_4_16(0xE208,1,0x04);
-		WriteCmdDataIPS_4_16(0xE209,1,0x07);
-		WriteCmdDataIPS_4_16(0xE20A,1,0x0B);
-		WriteCmdDataIPS_4_16(0xE20B,1,0x08);
-		WriteCmdDataIPS_4_16(0xE20C,1,0x0F);
-		WriteCmdDataIPS_4_16(0xE20D,1,0x10);
-		WriteCmdDataIPS_4_16(0xE20E,1,0x0A);
-		WriteCmdDataIPS_4_16(0xE20F,1,0x01);
-
-		WriteCmdDataIPS_4_16(0xD900,1,0x4E); /* VCOM Voltage Setting */
-		WriteCmdDataIPS_4_16(0xc181,1,0x66); //osc=65HZ
-		WriteCmdDataIPS_4_16(0xc1a1,1,0x08); //RGB Video Mode Setting
-		WriteCmdDataIPS_4_16(0xc592,1,0x01); //power control
-		WriteCmdDataIPS_4_16(0xc595,1,0x34); //power control
-		WriteCmdDataIPS_4_16(0xd800,2,0x79); //GVDD / NGVDD setting
-
-		WriteCmdDataIPS_4_16(0xc594,1,0x33); //power control
-
-		WriteCmdDataIPS_4_16(0xc0a3,1,0x1B); //panel timing setting
-		WriteCmdDataIPS_4_16(0xc582,1,0x83); //power control
-		WriteCmdDataIPS_4_16(0xc481,1,0x83);  //source driver setting
-		WriteCmdDataIPS_4_16(0xc1a1,1,0x0E);
-		WriteCmdDataIPS_4_16(0xb3a6,1,0x20);
-		WriteCmdDataIPS_4_16(0xb3a7,1,0x01);
-
-		WriteCmdDataIPS_4_16(0xce80,1,0x85); // GOA VST
-		WriteCmdDataIPS_4_16(0xce81,1,0x01); // GOA VST
-		WriteCmdDataIPS_4_16(0xce82,1,0x00); // GOA VST
-		WriteCmdDataIPS_4_16(0xce83,1,0x84); // GOA VST
-		WriteCmdDataIPS_4_16(0xce84,1,0x01); // GOA VST
-		WriteCmdDataIPS_4_16(0xce85,1,0x00); // GOA VST
-		WriteCmdDataIPS_4_16(0xcea0,1,0x18); // GOA CLK
-		WriteCmdDataIPS_4_16(0xcea1,1,0x04); // GOA CLK
-		WriteCmdDataIPS_4_16(0xcea2,1,0x03); // GOA CLK
-		WriteCmdDataIPS_4_16(0xcea3,1,0x39); // GOA CLK
-		WriteCmdDataIPS_4_16(0xcea4,3,0x00); // GOA CLK
-
-		WriteCmdDataIPS_4_16(0xcea7,1,0x18); // GOA CLK
-		WriteCmdDataIPS_4_16(0xcea8,1,0x03); // GOA CLK
-		WriteCmdDataIPS_4_16(0xcea9,1,0x03); // GOA CLK
-		WriteCmdDataIPS_4_16(0xceaa,1,0x3a); // GOA CLK
-		WriteCmdDataIPS_4_16(0xceab,3,0x00); // GOA CLK
-
-		WriteCmdDataIPS_4_16(0xceb0,1,0x18); // GOA CLK
-		WriteCmdDataIPS_4_16(0xceb1,1,0x02); // GOA CLK
-		WriteCmdDataIPS_4_16(0xceb2,1,0x03); // GOA CLK
-		WriteCmdDataIPS_4_16(0xceb3,1,0x3b); // GOA CLK
-		WriteCmdDataIPS_4_16(0xceb4,3,0x00); // GOA CLK
-
-		WriteCmdDataIPS_4_16(0xceb7,1,0x18); // GOA CLK
-		WriteCmdDataIPS_4_16(0xceb8,1,0x01); // GOA CLK
-		WriteCmdDataIPS_4_16(0xceb9,1,0x03); // GOA CLK
-		WriteCmdDataIPS_4_16(0xceba,1,0x3c); // GOA CLK
-		WriteCmdDataIPS_4_16(0xcebb,3,0x00); // GOA CLK
-
-		WriteCmdDataIPS_4_16(0xcfc0,1,0x01); // GOA ECLK
-		WriteCmdDataIPS_4_16(0xcfc1,1,0x01); // GOA ECLK
-		WriteCmdDataIPS_4_16(0xcfc2,2,0x20); // GOA ECLK
-
-		WriteCmdDataIPS_4_16(0xcfc4,2,0x00); // GOA ECLK
-
-		WriteCmdDataIPS_4_16(0xcfc6,1,0x01); // GOA other options
-		WriteCmdDataIPS_4_16(0xcfc7,1,0x00);
-
-		// GOA signal toggle option setting
-		WriteCmdDataIPS_4_16(0xcfc8,2,0x00); //GOA signal toggle option setting
-
-		//GOA signal toggle option setting
-		WriteCmdDataIPS_4_16(0xcfd0,1,0x00);
-		WriteCmdDataIPS_4_16(0xcb80,10,0x00);
-
-		WriteCmdDataIPS_4_16(0xcb90,15,0x00);
-		WriteCmdDataIPS_4_16(0xcba0,15,0x00);
-		WriteCmdDataIPS_4_16(0xcbb0,10,0x00);
-
-		WriteCmdDataIPS_4_16(0xcbc0,1,0x00);
-		WriteCmdDataIPS_4_16(0xcbc1,5,0x04);
-
-		WriteCmdDataIPS_4_16(0xcbc6,9,0x00);
-
-		WriteCmdDataIPS_4_16(0xcbd0,6,0x00);
-
-		WriteCmdDataIPS_4_16(0xcbd6,5,0x04);
-
-		WriteCmdDataIPS_4_16(0xcbdb,4,0x00);
-
-		WriteCmdDataIPS_4_16(0xcbe0,10,0x00);
-
-		WriteCmdDataIPS_4_16(0xcbf0,10,0xFF);
-
-		WriteCmdDataIPS_4_16(0xcc80,1,0x00);
-		WriteCmdDataIPS_4_16(0xcc81,1,0x26);
-		WriteCmdDataIPS_4_16(0xcc82,1,0x09);
-		WriteCmdDataIPS_4_16(0xcc83,1,0x0B);
-		WriteCmdDataIPS_4_16(0xcc84,1,0x01);
-		WriteCmdDataIPS_4_16(0xcc85,1,0x25);
-		WriteCmdDataIPS_4_16(0xcc86,4,0x00);
-
-		WriteCmdDataIPS_4_16(0xcc90,11,0x00);
-
-		WriteCmdDataIPS_4_16(0xcc9b,1,0x26);
-		WriteCmdDataIPS_4_16(0xcc9c,1,0x0A);
-		WriteCmdDataIPS_4_16(0xcc9d,1,0x0C);
-		WriteCmdDataIPS_4_16(0xcc9e,1,0x02);
-		WriteCmdDataIPS_4_16(0xcca0,1,0x25);
-		WriteCmdDataIPS_4_16(0xcca1,14,0x00);
-
-		WriteCmdDataIPS_4_16(0xccb0,1,0x00);
-		WriteCmdDataIPS_4_16(0xccb1,1,0x25);
-		WriteCmdDataIPS_4_16(0xccb2,1,0x0C);
-		WriteCmdDataIPS_4_16(0xccb3,1,0x0A);
-		WriteCmdDataIPS_4_16(0xccb4,1,0x02);
-		WriteCmdDataIPS_4_16(0xccb5,1,0x26);
-		WriteCmdDataIPS_4_16(0xccb6,4,0x00);
-
-		WriteCmdDataIPS_4_16(0xccc0,11,0x00);
-
-		WriteCmdDataIPS_4_16(0xcccb,1,0x25);
-		WriteCmdDataIPS_4_16(0xcccc,1,0x0B);
-		WriteCmdDataIPS_4_16(0xcccd,1,0x09);
-		WriteCmdDataIPS_4_16(0xccce,1,0x01);
-		WriteCmdDataIPS_4_16(0xccd0,1,0x26);
-		WriteCmdDataIPS_4_16(0xccd1,14,0x00);
-		WriteCmdDataIPS_4_16(0x3A00,1,0x55); // Colour 565
+			Option.SSDspeed = 0;
+			SendCommand16Block(OTM8009A_16Init);
 		}
 
-
-		WriteSSD1963Command(0x1100); uSec( 100000);//delay(100);
-		WriteSSD1963Command(0x2900); uSec( 100000);//delay(50);
-
-		//It is a natural PORTrait LCD, but we will fudge to make it
+		//It is a natural PORTrait LCD, but we will fudge it to make it
 		//work for 1=landscape,2=portrait 3=RLandscape,4=RPortrait
 
         #define OTM8009A_MADCTL_MY  0x80
@@ -2096,10 +872,8 @@ void SetTearingCfg(int state, int mode)
 		   	case RPORTRAIT:     i=OTM8009A_MADCTL_MX | OTM8009A_MADCTL_MY; break;
 		}
 
-
 		WriteCmdDataIPS_4_16(0x3600,1,i);   //set Memory Access Control
 		ClearScreen(Option.DefaultBC);
-		//LCD_BL_Period=2;
 
 }
 void InitSSD1963(void) {
@@ -2197,10 +971,10 @@ void InitSSD1963(void) {
     // setup the pixel write order
     WriteSSD1963Command(CMD_SET_ADDR_MODE);
     switch(Option.DISPLAY_ORIENTATION) {
-        case LANDSCAPE:     WriteDataSSD1963(SSD1963_LANDSCAPE); break;
-        case PORTRAIT:      WriteDataSSD1963(SSD1963_PORTRAIT); break;
-        case RLANDSCAPE:    WriteDataSSD1963(SSD1963_RLANDSCAPE); break;
-        case RPORTRAIT:     WriteDataSSD1963(SSD1963_RPORTRAIT); break;
+        case LANDSCAPE:     WriteDataSSD1963(SSD1963_LANDSCAPE  | SSD1963rgb); break;
+        case PORTRAIT:      WriteDataSSD1963(SSD1963_PORTRAIT   | SSD1963rgb); break;
+        case RLANDSCAPE:    WriteDataSSD1963(SSD1963_RLANDSCAPE | SSD1963rgb); break;
+        case RPORTRAIT:     WriteDataSSD1963(SSD1963_RPORTRAIT  | SSD1963rgb); break;
     }
 
     // Set the scrolling area
@@ -2214,7 +988,7 @@ void InitSSD1963(void) {
     ScrollStart = 0;
  
 	ClearScreen(Option.DefaultBC);
-    SetBacklightSSD1963(Option.DefaultBrightness);
+   // SetBacklightSSD1963(Option.DefaultBrightness);
 	WriteSSD1963Command(CMD_ON_DISPLAY);	                                // Turn on display; show the image on display	
 }
 
@@ -2228,7 +1002,7 @@ Draw a filled rectangle on the video output with physical frame buffer coordinat
 ***********************************************************************************************/
 void PhysicalDrawRect_16(int x1, int y1, int x2, int y2, int c) {
     int i;
-    if(Option.DISPLAY_TYPE==ILI9341_16) {
+    if(Option.DISPLAY_TYPE == ILI9341_16 || Option.DISPLAY_TYPE == ILI9486_16) {
     	WriteSSD1963Command(ILI9341_PIXELFORMAT);
     	WriteDataSSD1963(0x55); //change to RGB565 for write rectangle
     	SetAreaILI9341(x1, y1 , x2, y2, 1);
@@ -2245,7 +1019,7 @@ void PhysicalDrawRect_16(int x1, int y1, int x2, int y2, int c) {
     	  __DSB();
     }
     if(Option.SSDspeed==1)WriteCmdDataIPS_4_16(0x3A00,1,0x66);
-    if(Option.DISPLAY_TYPE==ILI9341_16){
+    if(Option.DISPLAY_TYPE == ILI9341_16 || Option.DISPLAY_TYPE == ILI9486_16){
     	WriteSSD1963Command(ILI9341_PIXELFORMAT);
     	WriteDataSSD1963(0x66);
     }
@@ -2285,7 +1059,7 @@ void DrawRectangleSSD1963(int x1, int y1, int x2, int y2, int c) {
     else
         y1 = (y1 + ScrollStart) % VRes;
     y2 = y1 + t;
-    if(Option.DISPLAY_TYPE > SSD_PANEL_8){
+    if(Option.DISPLAY_TYPE >= SSD_PANEL_START){
         if(y2 >= VRes) {                                                // if the box splits over the frame buffer boundary
             PhysicalDrawRect_16(x1, y1, x2, VRes - 1, c);                  // draw the top part
             PhysicalDrawRect_16(x1, 0, x2, y2 - VRes , c);                 // and the bottom part
@@ -2294,7 +1068,7 @@ void DrawRectangleSSD1963(int x1, int y1, int x2, int y2, int c) {
     }
 }
 void DrawBufferSSD1963_16(int x1, int y1, int x2, int y2, char* p) {
-   // int i,t;
+    int i;
 	int t,toggle=0;
 	unsigned int bl=0;
     int xx1=x1, yy1=y1, xx2=x2, yy2=y2, x, y;
@@ -2322,16 +1096,9 @@ void DrawBufferSSD1963_16(int x1, int y1, int x2, int y2, char* p) {
     else
         yy1 = (yy1 + ScrollStart) % VRes;
     yy2 = yy1 + t;                                                    // and set y2 to the same
-#ifdef notrequired
-    	if(yy2 >= VRes) {
-        	if(Option.DISPLAY_TYPE==ILI9341_16) {
-        		SetAreaILI9341(xx1, yy1, xx2, VRes - 1, 1);
-        	}else if(Option.DISPLAY_TYPE==) {
-        		SetAreaIPS_4_16(xx1, yy1, xx2,IPS_4_16 VRes - 1, 1);
-        	} else {
-        		SetAreaSSD1963(xx1, yy1, xx2, VRes - 1); // if the box splits over the frame buffer boundary
-        		WriteSSD1963Command(CMD_WR_MEMSTART);
-        	}
+    	if(yy2 >= VRes) {  //Only SSD1963 with hardware scrolling can get here
+        	SetAreaSSD1963(xx1, yy1, xx2, VRes - 1); // if the box splits over the frame buffer boundary
+        	WriteSSD1963Command(CMD_WR_MEMSTART);
     		for(i = (xx2 - xx1 + 1) * ((VRes - 1) - yy1 + 1); i > 0; i--){
     			c.rgbbytes[0]=*p++; //this order swaps the bytes to match the .BMP file
     			c.rgbbytes[1]=*p++;
@@ -2339,14 +1106,10 @@ void DrawBufferSSD1963_16(int x1, int y1, int x2, int y2, char* p) {
     			FMC_RBANK1->RAM = ((c.rgb>>8) & 0xf800) | ((c.rgb>>5) & 0x07e0) | ((c.rgb>>3) & 0x001f);
     			__DSB();
 				}
-        	if(Option.DISPLAY_TYPE==ILI9341_16) {
-        		SetAreaILI9341(xx1, 0, xx2, yy2 - VRes, 1);
-        	}else if(Option.DISPLAY_TYPE==IPS_4_16) {
-        		SetAreaIPS_4_16(xx1, 0, xx2, yy2 - VRes, 1);
-        	} else {
-        		SetAreaSSD1963(xx1, 0, xx2, yy2 - VRes );
-        		WriteSSD1963Command(CMD_WR_MEMSTART);
-        	}
+
+        	SetAreaSSD1963(xx1, 0, xx2, yy2 - VRes );
+        	WriteSSD1963Command(CMD_WR_MEMSTART);
+
     		for(i = (xx2 - xx1 + 1) * (yy2 - VRes + 1); i > 0; i--){
     			c.rgbbytes[0]=*p++; //this order swaps the bytes to match the .BMP file
     			c.rgbbytes[1]=*p++;
@@ -2355,9 +1118,8 @@ void DrawBufferSSD1963_16(int x1, int y1, int x2, int y2, char* p) {
     			__DSB();
 				}
     	} else {
-#endif
     		// the whole box is within the frame buffer - much easier
-        	if(Option.DISPLAY_TYPE==ILI9341_16) {
+        	if(Option.DISPLAY_TYPE == ILI9341_16 || Option.DISPLAY_TYPE == ILI9486_16 ) {
         		Option.SSDspeed=2;
         		SetAreaILI9341(xx1, yy1 , xx2, yy2, 1);
         	}else if(Option.DISPLAY_TYPE==IPS_4_16) {
@@ -2400,6 +1162,7 @@ void DrawBufferSSD1963_16(int x1, int y1, int x2, int y2, char* p) {
    			// extra packet needed
    			FMC_RBANK1->RAM = (bl<<8) | ((c.rgb>>8) & 0x00f8) ; __DSB();  //
    	 }
+  }
 }
 void ReadBufferSSD1963_16(int x1, int y1, int x2, int y2, char* p) {
      int x, y, t, i,nr=0 ;
@@ -2424,17 +1187,10 @@ void ReadBufferSSD1963_16(int x1, int y1, int x2, int y2, char* p) {
         yy1 = (yy1 + ScrollStart) % VRes;
     yy2 = yy1 + t;                                                    // and set y2 to the same
 
-    if(yy2 >= VRes) {      ////////////////////////////////////////////////////////////
-    	if(Option.DISPLAY_TYPE==ILI9341_16) {
-    		SetAreaILI9341(xx1, yy1, xx2, VRes - 1, 0);
-        	t=FMC_RBANK1->RAM ; __DSB();// dummy read
-    	}else if(Option.DISPLAY_TYPE==IPS_4_16) {
-        	SetAreaIPS_4_16(xx1, yy1, xx2, VRes - 1, 0);
-        	t=FMC_RBANK1->RAM ; __DSB();// dummy read
-    	} else {
-    		SetAreaSSD1963(xx1, yy1, xx2, VRes - 1); // if the box splits over the frame buffer boundary
-    		WriteSSD1963Command(CMD_RD_MEMSTART);
-    	}
+    if(yy2 >= VRes) {      /////////Only the SSD1963 with hardware scrolling can get here
+
+    	SetAreaSSD1963(xx1, yy1, xx2, VRes - 1); // if the box splits over the frame buffer boundary
+    	WriteSSD1963Command(CMD_RD_MEMSTART);
     	t=FMC_RBANK1->RAM ; __DSB();
         *p++=(t & 0x1F)<<3; *p++=(t & 0x7e0)>>3; *p++=(t & 0xf800)>>8;
         i=(xx2 - xx1 + 1) * ((VRes - 1) - yy1 + 1);
@@ -2442,16 +1198,9 @@ void ReadBufferSSD1963_16(int x1, int y1, int x2, int y2, char* p) {
         	t=FMC_RBANK1->RAM ; __DSB();
             *p++=(t & 0x1F)<<3; *p++=(t & 0x7e0)>>3; *p++=(t & 0xf800)>>8;
         }
-    	if(Option.DISPLAY_TYPE==ILI9341_16) {
-    		SetAreaILI9341(xx1, 0, xx2, yy2 - VRes ,0 );
-    		t=FMC_RBANK1->RAM ; // dummy read
-    	}else if(Option.DISPLAY_TYPE==IPS_4_16) {
-    		SetAreaIPS_4_16(xx1, 0, xx2, yy2 - VRes ,0 );
-    		t=FMC_RBANK1->RAM ; // dummy read
-    	} else {
-    		SetAreaSSD1963(xx1, 0, xx2, yy2 - VRes );
-    		WriteSSD1963Command(CMD_RD_MEMSTART);
-    	}
+
+    	SetAreaSSD1963(xx1, 0, xx2, yy2 - VRes );
+    	WriteSSD1963Command(CMD_RD_MEMSTART);
     	t=FMC_RBANK1->RAM ; __DSB();
         *p++=(t & 0x1F)<<3; *p++=(t & 0x7e0)>>3; *p++=(t & 0xf800)>>8;
          for(i = (xx2 - xx1 + 1) * (yy2 - VRes + 1); i > 1; i--){
@@ -2460,9 +1209,7 @@ void ReadBufferSSD1963_16(int x1, int y1, int x2, int y2, char* p) {
         }
     } else {
     	// the whole box is within the frame buffer - much easier
-    	if(Option.DISPLAY_TYPE==ILI9341_16) {
-    		//WriteSSD1963Command(ILI9341_PIXELFORMAT);
-    		//WriteDataSSD1963(0x66); //change to RGB666 for read
+    	if(Option.DISPLAY_TYPE == ILI9341_16 || Option.DISPLAY_TYPE == ILI9486_16 ) {
     		SetAreaILI9341(xx1, yy1 , xx2, yy2, 0);
     		t=FMC_RBANK1->RAM ; // dummy read
     	}else if(Option.DISPLAY_TYPE==IPS_4_16) {
@@ -2475,7 +1222,7 @@ void ReadBufferSSD1963_16(int x1, int y1, int x2, int y2, char* p) {
         for(y=y1;y<=y2;y++){
             for(x=x1;x<=x2;x++){
                 if(x>=0 && x<HRes && y>=0 && y<VRes){
-                	 if(Option.DISPLAY_TYPE==ILI9341_16) {
+                	 if(Option.DISPLAY_TYPE == ILI9341_16 || Option.DISPLAY_TYPE == ILI9486_16 ) {
                 	      if(toggle==0){
                 	         t=(FMC_RBANK1->RAM); __DSB();
                 	         t<<=8 ;
@@ -2524,13 +1271,10 @@ void ReadBufferSSD1963_16(int x1, int y1, int x2, int y2, char* p) {
                 } else p+=3; //don't read data for pixels outside the screen
             }
         }
-       // if(Option.DISPLAY_TYPE==ILI9341_16){
-             	//WriteSSD1963Command(ILI9341_PIXELFORMAT);
-              	//WriteDataSSD1963(0x55); //change to RDB565 for write
-       // }
+
     } ////////////////////////////////////////////////////////////////////////////////
 }void fun_getscanline(void){
-	if(Option.DISPLAY_TYPE == ILI9341 || Option.DISPLAY_TYPE == ILI9481) error("Invalid on this display");
+	if(Option.DISPLAY_TYPE > SSD_PANEL_END &&  Option.DISPLAY_TYPE < P16_PANEL_START) error("Invalid on this display");
 	int t;
 	int x=0,c;
 		getargs(&ep, 3,",");
@@ -2544,7 +1288,7 @@ void ReadBufferSSD1963_16(int x1, int y1, int x2, int y2, char* p) {
 						x=FMC_RBANK1->RAM ; // dummy read
 					}
 					t|=FMC_RBANK1->RAM;
-				}else if(Option.DISPLAY_TYPE == ILI9341_16){
+				}else if(Option.DISPLAY_TYPE == ILI9341_16 || Option.DISPLAY_TYPE == ILI9486_16 ){
 					WriteSSD1963Command(CMD_GET_SCANLINE);
 					t=FMC_RBANK1->RAM ; // dummy read
 					t=(FMC_RBANK1->RAM <<8);
@@ -2566,7 +1310,7 @@ void ReadBufferSSD1963_16(int x1, int y1, int x2, int y2, char* p) {
 					x=FMC_RBANK1->RAM ; // dummy read
 					t=(FMC_RBANK1->RAM);
 
-			}else if(Option.DISPLAY_TYPE == ILI9341_16){
+			}else if(Option.DISPLAY_TYPE == ILI9341_16 || Option.DISPLAY_TYPE == ILI9486_16 ){
 					WriteSSD1963Command(c);
 					t=FMC_RBANK1->RAM ; // dummy read
 					t=(FMC_RBANK1->RAM );
@@ -2614,7 +1358,7 @@ void DrawBitmapSSD1963_16(int x1, int y1, int width, int height, int scale, int 
     if(Option.DISPLAY_ORIENTATION == RLANDSCAPE) yt = y = (y1 + (VRes - ScrollStart)) % VRes;
     else yt = y = (y1 + ScrollStart) % VRes;
     
-	if(Option.DISPLAY_TYPE==ILI9341_16) {
+	if(Option.DISPLAY_TYPE == ILI9341_16 || Option.DISPLAY_TYPE == ILI9486_16 ) {
 		Option.SSDspeed=2;
 		SetAreaILI9341(XStart, y, XEnd, (y + (height * scale) - 1)  % VRes, 1);
 	}else if(Option.DISPLAY_TYPE==IPS_4_16 ) {
@@ -2623,53 +1367,7 @@ void DrawBitmapSSD1963_16(int x1, int y1, int width, int height, int scale, int 
 		SetAreaSSD1963(XStart, y, XEnd, (y + (height * scale) - 1)  % VRes);
 		WriteSSD1963Command(CMD_WR_MEMSTART);
 	}
-#ifdef SSDspeed
-	if(Option.SSDspeed){
-		for(i = 0; i < height; i++) {                                   // step thru the font scan line by line
-			for(j = 0; j < scale; j++) {                                // repeat lines to scale the font
-				if(vertCoord++ < 0) continue;                           // we are above the top of the screen
-				if(vertCoord > VRes){
-					if(buff!=NULL)FreeMemory(buff);
-					return;                            // we have extended beyond the bottom of the screen
-				}
-				// if we have scrolling in action we could run over the end of the frame buffer
-				// if so, terminate this area and start a new one at the top of the frame buffer
-				if(y++ == VRes) {
-					//if(Option.DISPLAY_TYPE==ILI9341_16) {
-					//	SetAreaILI9341(XStart, 0, XEnd, ((yt + (height * scale) - 1)  % VRes) - y, 1);
-					//}else if(Option.DISPLAY_TYPE==IPS_4_16 ) {
-					//	SetAreaIPS_4_16(XStart, 0, XEnd, ((yt + (height * scale) - 1)  % VRes) - y, 1);
-					//} else {
-						SetAreaSSD1963(XStart, 0, XEnd, ((yt + (height * scale) - 1)  % VRes) - y);
-						WriteSSD1963Command(CMD_WR_MEMSTART);
-					//}
-				}
-				horizCoord = x1;
-				for(k = 0; k < width; k++) {                            // step through each bit in a scan line
-					for(m = 0; m < scale; m++) {                        // repeat pixels to scale in the x axis
-						if(horizCoord++ < 0) continue;                  // we have not reached the left margin
-						if(horizCoord > HRes) continue;                 // we are beyond the right margin
-						if((bitmap[((i * width) + k)/8] >> (((height * width) - ((i * width) + k) - 1) %8)) & 1) {
-							} else {
-							if(buff!=NULL){
-								c.rgbbytes[0]=buff[n];
-								c.rgbbytes[1]=buff[n+1];
-								c.rgbbytes[2]=buff[n+2];
-								ig16=((c.rgb>>8) & 0xf800) | ((c.rgb>>5) & 0x07e0) | ((c.rgb>>3) & 0x001f);
-								FMC_RBANK1->RAM = (uint16_t)ig16;
-								__DSB();
-								} else {
-								FMC_RBANK1->RAM = (uint16_t)bg16;
-						  	  __DSB();
-								}
-						}
-						n+=3;
-					}
-				}
-			}
-		}
-	} else {  //ONLY NEED THIS//////////////////////////////////////////////////////
-#endif
+
 
 		for(i = 0; i < height; i++) {                                   // step thru the font scan line by line
 			for(j = 0; j < scale; j++) {                                // repeat lines to scale the font
@@ -2681,7 +1379,7 @@ void DrawBitmapSSD1963_16(int x1, int y1, int width, int height, int scale, int 
 				// if we have scrolling in action we could run over the end of the frame buffer
 				// if so, terminate this area and start a new one at the top of the frame buffer
 				if(y++ == VRes) {
-					if(Option.DISPLAY_TYPE==ILI9341_16) {
+					if(Option.DISPLAY_TYPE == ILI9341_16 || Option.DISPLAY_TYPE == ILI9486_16 ) {
 						Option.SSDspeed=2;
 						SetAreaILI9341(XStart, 0, XEnd, ((yt + (height * scale) - 1)  % VRes) - y, 1);
 					}else if(Option.DISPLAY_TYPE==IPS_4_16) {
@@ -2804,6 +1502,7 @@ void ScrollSSD1963(int lines) {
 
  Note that CursorTimer is incremented by the millisecond interrupt
 ***********************************************************************************************/
+/*
 void ShowCursor(int show) {
 	static int visible = false;
     int newstate;
@@ -2812,8 +1511,24 @@ void ShowCursor(int show) {
 	newstate = ((CursorTimer <= CURSOR_ON) && show);                // what should be the state of the cursor?
 	if(visible == newstate) return;									// we can skip the rest if the cursor is already in the correct state
 	visible = newstate;                                             // draw the cursor BELOW the font
-    if(gui_font_height!=10)DrawLine(CurrentX, CurrentY + gui_font_height, CurrentX + gui_font_width, CurrentY + gui_font_height, 2, visible ? gui_fcolour : gui_bcolour);
-    else DrawLine(CurrentX, CurrentY + gui_font_height-2, CurrentX + gui_font_width, CurrentY + gui_font_height-2, 2, visible ? gui_fcolour : gui_bcolour);
+
+   if(gui_font_height!=10)DrawLine(CurrentX, CurrentY + gui_font_height, CurrentX + gui_font_width, CurrentY + gui_font_height, 2, visible ? gui_fcolour : gui_bcolour);
+   else DrawLine(CurrentX, CurrentY + gui_font_height-2, CurrentX + gui_font_width, CurrentY + gui_font_height-2, 2, visible ? gui_fcolour : gui_bcolour);
+}
+*/
+// Now allows different cursor in INS and OVR mode
+//Use when editing Command line.
+void ShowCursor(int show,int ins) {
+	static int visible = false;
+    int newstate;
+
+    if(!Option.DISPLAY_CONSOLE) return;
+	newstate = ((CursorTimer <= CURSOR_ON) && show);                // what should be the state of the cursor?
+	if(visible == newstate) return;									// we can skip the rest if the cursor is already in the correct state
+	visible = newstate;                                             // draw the cursor BELOW the font
+	if(ins)	DrawLine(CurrentX + (gui_font_width>>2), CurrentY + gui_font_height, CurrentX + (gui_font_width>>1), CurrentY + gui_font_height, 3, visible ? gui_fcolour : gui_bcolour);
+	else DrawLine(CurrentX, CurrentY + gui_font_height, CurrentX + gui_font_width, CurrentY + gui_font_height, 2, visible ? gui_fcolour : gui_bcolour);
+
 }
 
 
@@ -2821,8 +1536,11 @@ void ShowCursor(int show) {
 /******************************************************************************************
  Print a char on the LCD display (SSD1963 and in landscape only).  It handles control chars
  such as newline and will wrap at the end of the line and scroll the display if necessary.
-
  The char is printed at the current location defined by CurrentX and CurrentY
+ ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ Now updated so that \b will move to end of previous line when back spacing past beginning of
+ the current line. Used when editing command line.
+
  *****************************************************************************************/
 void DisplayPutC(char c) {
 
@@ -2838,8 +1556,14 @@ void DisplayPutC(char c) {
 
     // handle the standard control chars
     switch(c) {
-        case '\b':  CurrentX -= gui_font_width;
-                    if(CurrentX < 0) CurrentX = 0;
+        case '\b':
+        	        CurrentX -= gui_font_width;
+                    //if(CurrentX < 0)CurrentX = 0;
+                    if(CurrentX < 0){  //Go to end of previous line
+                    	CurrentY -= gui_font_height ;                  //Go up one line
+                    	CurrentX = (Option.Width-1) * gui_font_width;  //go to last character
+
+                    }
                     return;
         case '\r':  CurrentX = 0;
                     return;
@@ -2853,7 +1577,9 @@ void DisplayPutC(char c) {
                         DisplayPutC(' ');
                     } while((CurrentX/gui_font_width) % Option.Tab);
                     return;
+
     }
+
     GUIPrintChar(gui_font, gui_fcolour, gui_bcolour, c, ORIENT_NORMAL);            // print it
 }
 

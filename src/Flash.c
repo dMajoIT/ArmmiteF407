@@ -46,6 +46,7 @@ int sectorsave;
 volatile uint32_t realflashpointer;
 uint32_t GetSector(uint32_t Address);
 extern RTC_HandleTypeDef hrtc;
+extern SPI_HandleTypeDef hspi1;
 
 // erase the flash and init the variables used to buffer bytes for writing to the flash
 void FlashWriteInit(int sector) {
@@ -156,6 +157,10 @@ void FlashWriteWord(unsigned int i) {
 	FlashWriteByte((i>>24) & 0xFF);
 }
 
+// Set the pointer to a specific address
+void FlashSetAddress(int address) {
+	 realflashpointer=FLASH_PROGRAM_ADDR+address;
+}
 
 // flush any bytes in the buffer to flash
 void FlashWriteClose(void) {
@@ -189,9 +194,8 @@ void FlashWriteClose(void) {
 
 
 /*******************************************************************************************************************
- The variables are stored in a reserved flash area (which in total is 2K).
- The first few bytes are used for the options. So we must save the options in RAM before we erase, then write the
- options back.  The variables saved by this command are then written to flash starting just after the options.
+ The variables are stored in battery backed RAM (which in total is 4K).
+ The options are store separately in 80 bytes of battery backed RAM.
 ********************************************************************************************************************/
 void cmd_var(void) {
     char *p, *buf, *bufp, *varp, *vdata, lastc;
@@ -200,6 +204,8 @@ void cmd_var(void) {
     char *VarDataList[MAX_ARG_COUNT];
     char *SavedVarsFlash;
     char *w;
+
+
     if((p = checkstring(cmdline, "CLEAR"))) {
         checkend(p);
         ClearSavedVars();
@@ -250,9 +256,9 @@ void cmd_var(void) {
 
      if((p = checkstring(cmdline, "SAVE"))) {
         getargs(&p, (MAX_ARG_COUNT * 2) - 1, ",");                  // getargs macro must be the first executable stmt in a block
+        if(argc == 0) error("Invalid syntax");
         if(argc && (argc & 0x01) == 0) error("Invalid syntax");
 
-        // befor we start, run through the arguments checking for errors
         // before we start, run through the arguments checking for errors
         for(i = 0; i < argc; i += 2) {
             checkend(skipvar(argv[i], false));
@@ -274,8 +280,9 @@ void cmd_var(void) {
         bufp = buf = GetTempMemory(SAVED_VAR_RAM_SIZE);           // build the saved variable table in RAM
         SavedVarsFlash = (char*)SAVED_VAR_RAM_ADDR;      // point to where the variables were saved
         varp = SavedVarsFlash;   // point to where the variables were saved
+
         while(SavedVarsFlash[4] != 0 && *varp != 0xff) {            // 0xff is the end of the variable list, SavedVarsFlash[4] = 0 means that the flash has never been written to
-            type = *varp++;                                         // get the variable type
+           	type = *varp++;                                         // get the variable type
             array = type & 0x80;  type &= 0x7f;                     // set array to true if it is an array
             vdata = varp;                                           // save a pointer to the name
             while(*varp) varp++;                                    // skip the name
@@ -305,6 +312,7 @@ void cmd_var(void) {
                 *bufp++ = *vdata++;                                 // and the terminating zero byte
                 while(nbr--) *bufp++ = *varp++;                     // copy the data
             }
+
         }
 
 
@@ -358,12 +366,56 @@ void cmd_var(void) {
 //        FlashWriteClose();
         return;
      }
+     if((p = checkstring(cmdline, "FSAVE"))) { // Save 4K of VARs to W25Q16 Windbond.
+    	    // write the whole lot into the W25Q16 library area at page 8064
+    	    // First Erase the 4K Var area in W25Q16
+    	    int pageno=WBVarAddr;
+    	    SPIOpen();
+    	    WBEraseArea(sectorerase,pageno);
+            // load the current variable save data into RAM
+    	    buf = GetTempMemory(SAVED_VAR_RAM_SIZE);
+    	    w = (char*)SAVED_VAR_RAM_ADDR;                  // point to where the variables were saved
+    	    for(i=0;i<SAVED_VAR_RAM_SIZE;i++){
+    	         buf[i]= w[i];
+    	    }
+            //now write to WindBond W25Q16 flash
+    	    p = GetMemory(256);
+    	    i=0;
+    	    for(j=0;j<SAVED_VAR_RAM_SIZE;j++){
+    	      p[i++]=buf[j];
+              if (i>255){  //write our page
+    	         WBWritePage(pageno++,p);
+    	         i=0;
+    	      }
+            }
+    	    FreeMemory(p);
+    	    SPIClose();
+    	    return;
+      }
+
+      if((p = checkstring(cmdline, "FRESTORE"))) { // Restore 4K of VARs from W25Q16 Windbond.
+
+    	     //Restore 4K of VAR data for WindBond WBVarAddr to the 4K Battery Backed Ram
+    	     int pageno;
+    	     w=(char*)SAVED_VAR_RAM_ADDR;
+    	     SPIOpen();
+    	     p = GetMemory(256);
+    	     i=0;j=0;
+    	     for (pageno=WBVarAddr;pageno<WBVarAddr+16;pageno++){
+    	        WBReadPage(pageno,p);
+    	        for (i=0;i<256;i++){ w[j++]=p[i] ;}
+    	     }
+    	     FreeMemory(p);
+    	     SPIClose();
+    	     return;
+      }
     error("Unknown command");
 }
 
 /**********************************************************************************************
    These routines are used to load or save the global Option structure from/to flash.
    These options are stored in the beginning of the flash used to save stored variables.
+   NOT USED as Options are now in 80 bytes of RTC battery backed ram
 ***********************************************************************************************/
 
 
@@ -390,10 +442,14 @@ void cmd_var(void) {
 
 }
 
-
 void LoadOptions(void) {
     memcpy((struct option_s *)&Option, (struct option_s *)FLASH_SAVED_OPTION_ADDR, sizeof(struct option_s));
 }*/
+
+/**********************************************************************************************
+   These routines are used to load or save the global Option structure from/to 80 bytes
+   of RTC battery backed ram.
+***********************************************************************************************/
 
 void SaveOptions(void) {
 	uint32_t *p, *q;
@@ -410,6 +466,28 @@ void SaveOptions(void) {
     }
 }
 
+/* SaveOptions as a function returns 1 if any changes. 0 if no change. */
+/*
+int SaveOptions(void) {
+	uint32_t *p, *q;
+	int i,readback[20],readcurrent[20];
+    p = q = (uint32_t *)&Option;
+    for(i = 0; i < 20; i++){
+    	HAL_RTCEx_BKUPWrite (&hrtc, i, *p++);
+    }
+    for(i = 0; i < 20; i++){
+		readback[i] = HAL_RTCEx_BKUPRead (&hrtc, i);
+	}
+    for(i=0; i < 20; i++){
+    	if(readback[i]!=*q++)error("Options not saved");
+    }
+    for(i=0; i < 20; i++){
+        	if(readcurrent[i]!=*q++)return 1;
+    }
+    return 0;
+}
+
+*/
 
 void LoadOptions(void) {
 	uint32_t *p;
@@ -421,17 +499,17 @@ void LoadOptions(void) {
 }
 
 
-// erase all flash memory and reset the options to their defaults
-// used on initial firmware run
+// reset the options to their defaults
+// used on initial firmware run or if options are corrupt
 void ResetAllOptions(void) {
-    Option.Height = SCREENHEIGHT;                                   // reset the options to their defaults
+    Option.Height = SCREENHEIGHT;
     Option.Width = SCREENWIDTH;
     Option.PIN = 0;
     Option.Baudrate = CONSOLE_BAUDRATE;
     Option.Autorun = false;
     Option.Listcase = CONFIG_TITLE;
     Option.Tab = 2;
-    Option.Invert = false;
+    Option.Restart = false;
     Option.ColourCode = true;
     Option.DISPLAY_TYPE = ILI9341_16;
     Option.DISPLAY_ORIENTATION = RLANDSCAPE;
@@ -445,6 +523,7 @@ void ResetAllOptions(void) {
    	Option.LCD_CD = 0;
    	Option.LCD_Reset = 0;
    	Option.LCD_CS = 0;
+   	Option.FLASH_CS=35;    // 35 default or 77 for mini
     Option.DISPLAY_CONSOLE = 0;
     Option.DefaultFont = 0x01;
     Option.DefaultFC = WHITE;
@@ -455,9 +534,10 @@ void ResetAllOptions(void) {
     Option.KeyboardConfig = NO_KEYBOARD ;
     Option.SSDspeed = 0;
     Option.TOUCH_Click = 0;
-    Option.DefaultBrightness = 100;
+    Option.DefaultBrightness = 50;
     Option.SerialPullup = 1;
     Option.MaxCtrls=201;
+    Option.ProgFlashSize = PROG_FLASH_SIZE;              //LIBRARY
     Option.Refresh = 0;
 	Option.DISPLAY_WIDTH = 0;
 	Option.DISPLAY_HEIGHT = 0;
@@ -473,20 +553,721 @@ void ClearSavedVars(void) {
     for(i=0;i<SAVED_VAR_RAM_SIZE;i++)*w++=0xFF;
 }
 
-// erase all flash memory and reset the options to their defaults
-// used on initial firmware run or when the user shorts pins 9 an 10 together on startup
-void ResetAllFlash(void) {
+/*******************************************************************************************************************
+ The LIBRARY commands
+ The library is an area in the top of program flash that holds code saved with LIBRARY SAVE.  It includes BASIC
+ code and CFunctions extracted from the library BASIC code.
+
+ The program flash layout is:
+ ===================   << PROG_FLASH_SIZE    (the total size of the flash area in bytes)
+ |                 |
+ |    library      |
+ |   CFunctions    |
+ ===================   << CFunctionLibrary   (starting address of the library CFunctions)
+ |    library      |
+ |     BASIC       |
+ |     code        |
+ ===================   << Option.ProgFlashSize   (the maximum size of a BASIC program. Indicates the library start)
+ |                 |
+ |     free        |
+ |   program       |
+ |    flash        |
+ |                 |
+ ~~~~~~~~~~~~~~~~~~~
+ |     main        |
+ |    program      |       this contains the CFunctions extracted from the main BASIC program
+ |   CFunctions    |
+ ===================   << CFunctionFlash   (starting address of the main program CFunctions)
+ |      main       |
+ |     BASIC       |
+ |    program      |
+ ===================   << ProgMemory   (starting address of the program flash area)
+
+********************************************************************************************************************/
+/*******************************************************************************************************************
+ The WindBond W25Q16 is 2 Meg of 8192 256 Btye pages.
+ It is on SPI1 and F_CS is 35 on VET6 board and 77 VET6 MINI
+ The usage layout is:
+ ===================   << Page 8191 end of Flash
+ |    64K          |      64K Block can be erased i.e. 256 pages
+ |    library      |      First page stores AA 55 55 AA plus 3 bytes as a copy of Option.ProgFlashSize
+ |   temp storage  |   <- library can be up to 64K
+ |                 |   << WBLibAddr (is Page 7936 Start of 64K of Library temp storage )
+ ===================   << Page 7935 End of VAR FSAVE area
+ |    VAR FSAVE    |     Minimum 4K sector can be erased i.e. 16 pages
+ |    4K Backup    |   << WBVarAddr (is Page 7920 Start of 4K used for VAR FSAVE backup of VAR ram)
+ ===================   << Page 7919 End of user area
+ |   User          |     28 K  needs to be erased in 7 * 4K sectors of 16pages
+ |   Available     |
+ ~~~~~~~~~~~~~~~~~~~
+ |    User         |
+ |   Available     |   Available to User. Must not use full Erase.
+ |                 |   erase  Block2 is 64K  256 pages
+ ~                 ~   erase  Block is 32K   128 pages
+ ~                 ~   erase Sector is 4K    16 pages
+ ~                 ~
+ |                 |
+ |                 |
+ ===================   << Page0    Start of User Area
+
+********************************************************************************************************************/
+
+void MIPS16 cmd_library(void) {
+    char *p,  *pp , *m, *MemBuff, *TempPtr, rem;
+    int i, j, k, InCFun, InQuote, CmdExpected;
+    unsigned int CFunDefAddr[100], *CFunHexAddr[100] , *CFunHexLibAddr[100] ;
+    /********************************************************************************************************************
+     ******* LIBRARY SAVE **********************************************************************************************/
+    if((p = checkstring(cmdline, "SAVE"))) {
+        if(CurrentLinePtr) error("Invalid in a program");
+        if(*ProgMemory != 0x01) return;
+        checkend(p);
+        ClearRuntime();
+        TempPtr = m = MemBuff = GetTempMemory(EDIT_BUFFER_SIZE);
+
+        rem = GetCommandValue("Rem");
+        InQuote = InCFun = j = 0;
+        CmdExpected = true;
+
+        // first copy the current program code residing in the Library area to RAM
+        if(Option.ProgFlashSize != PROG_FLASH_SIZE) {
+            p = ProgMemory + Option.ProgFlashSize;
+            while(!(p[0] == 0 && p[1] == 0)) *m++ = *p++;
+              *m++ = 0;                                               // terminate the last line
+        }
+     //dump(m, 256);
+        // then copy the current contents of the program memory to RAM
+        p = ProgMemory;
+        while(*p != 0xff) {
+            if(p[0] == 0 && p[1] == 0) break;                       // end of the program
+
+            if(*p == T_NEWLINE) {
+                TempPtr = m;
+                CurrentLinePtr = p;
+                *m++ = *p++;
+                CmdExpected = true;                                 // if true we can expect a command next (possibly a CFunction, etc)
+                if(*p == 0) {                                       // if this is an empty line we can skip it
+                    p++;
+                    if(*p == 0) break;                              // end of the program or module
+                    m--;
+                    continue;
+                }
+            }
+
+            if(*p == T_LINENBR) {
+//                TempPtr = m;
+                *m++ = *p++; *m++ = *p++; *m++ = *p++;              // copy the line number
+                skipspace(p);
+            }
+
+            if(*p == T_LABEL) {
+                for(i = p[1] + 2; i > 0; i--) *m++ = *p++;          // copy the label
+//                TempPtr = m;
+                skipspace(p);
+            }
+
+            if(CmdExpected && ( *p == GetCommandValue("End CSub") || *p == GetCommandValue("End DefineFont"))) {
+                InCFun = false;                                     // found an  END CSUB or END DEFINEFONT token
+            }
+
+            if(InCFun) {
+                skipline(p);                                        // skip the body of a CFunction
+                m = TempPtr;                                        // don't copy the new line
+                continue;
+            }
+
+            if(CmdExpected && ( *p == cmdCSUB || *p == GetCommandValue("DefineFont"))) {    // found a  CSUB or DEFINEFONT token
+                CFunDefAddr[++j] = (unsigned int)m;                 // save its address so that the binary copy in the library can point to it
+                while(*p) *m++ = *p++;                              // copy the declaration
+                InCFun = true;
+            }
+
+            if(CmdExpected && *p == rem) {                          // found a REM token
+                skipline(p);
+                m = TempPtr;                                        // don't copy the new line tokens
+                continue;
+            }
+
+            if(*p >= C_BASETOKEN || isnamestart(*p))
+                CmdExpected = false;                                // stop looking for a CFunction, etc on this line
+
+            if(*p == '"') InQuote = !InQuote;                       // found the start/end of a string
+
+            if(*p == '\'' && !InQuote) {                            // found a modern remark char
+                skipline(p);
+                if(*(m-3) == 0x01) {
+                    m = TempPtr;                                    // if the comment was the only thing on the line don't copy the line at all
+                    continue;
+                } else
+                    p--;
+            }
+
+            if(*p == ' ' && !InQuote) {                             // found a space
+                if(*(m-1) == ' ') m--;                              // don't copy the space if the preceeding char was a space
+            }
+
+            if(p[0] == 0 && p[1] == 0) break;                       // end of the program
+            *m++ = *p++;
+        }
+        while(*p == 0) *m++ = *p++;                                 // the end of the program can have multiple zeros
+        *m++ = *p++;;                                               // copy the terminating 0xff
+       // dump(MemBuff, 256,101);
+        while((unsigned int)p & 0b11) p++;
+        while((unsigned int)m & 0b11) *m++ = 0xff;                  // step to the next word boundary
+
+
+        // now copy the CFunction/CSub/Font data
+        // =====================================
+        // the format of a CFunction in flash is:
+        //   Unsigned Int - Address of the CFunction/CSub/Font in program memory (points to the token).  For a font it is zero.
+        //   Unsigned Int - The length of the CFunction/CSub/Font in bytes including the Offset (see below)
+        //   Unsigned Int - The Offset (in words) to the main() function (ie, the entry point to the CFunction/CSub).  The specs for the font if it is a font.
+        //   word1..wordN - The CFunction code
+        // The next CFunction starts immediately following the last word of the previous CFunction
+
+        // first, copy any CFunctions residing in the library area to RAM
+        k = 0;                                                      // this is used to index CFunHexLibAddr[] for later adjustment of a CFun's address
+        if(CFunctionLibrary != NULL) {
+            pp = (char *)CFunctionLibrary;
+            while(*(unsigned int *)pp != 0xffffffff) {
+                CFunHexLibAddr[++k] = (unsigned int *)m;            // save the address for later adjustment
+                j = (*(unsigned int *)(pp + 4)) + 8;                // calculate the total size of the CFunction
+                while(j--) *m++ = *pp++;                            // copy it into RAM
+            }
+        }
+
+        // then, copy any CFunctions in program memory to RAM
+        i = 0;                                                      // this is used to index CFunHexAddr[] for later adjustment of a CFun's address
+        while(*(unsigned int *)p != 0xffffffff) {
+            CFunHexAddr[++i] = (unsigned int *)m;                   // save the address for later adjustment
+            j = (*(unsigned int *)(p + 4)) + 8;                     // calculate the total size of the CFunction
+            while(j--) *m++ = *p++;                                 // copy it into RAM
+        }
+
+        // we have now copied all the CFunctions into RAM
+
+
+
+        // calculate the starting point of the library code (located in the top of the program space in flash)
+       //TempPtr = (ProgMemory + PROG_FLASH_SIZE) - (((m - MemBuff) + (FLASH_PAGE_SIZE - 1)) & (~(FLASH_PAGE_SIZE - 1)));
+
+        // calculate the size of the library code  to  end on a word boundary
+        j=(((m - MemBuff) + (0x4 - 1)) & (~(0x4 - 1)));
+        //We only have reserved 60K of flash to cache the library code in the windbond.
+        //Error if we try to use too much
+        if (j > 60*1024) error("Library too big, > 64K");
+
+        // calculate the starting point of the library code (located in the top of the program space in flash)
+        TempPtr = (ProgMemory + PROG_FLASH_SIZE) - j;
+
+        // TempPtr = (ProgMemory + PROG_FLASH_SIZE) - (((m - MemBuff) + (0x4 - 1)) & (~(0x4 - 1)));
+
+        // now adjust the addresses of the declaration in each CFunction header
+        // do not adjust a font who's "address" is zero
+
+        // first, CFunctions that were already in the library
+        for(; k > 0; k--) {
+            if(*CFunHexLibAddr[k]  > FONT_TABLE_SIZE) *CFunHexLibAddr[k] -= ((unsigned int)(ProgMemory + Option.ProgFlashSize) - (unsigned int)TempPtr);
+        }
+
+        // then, CFunctions that are being added to the library
+        for(; i > 0; i--) {
+            if(*CFunHexAddr[i]  > FONT_TABLE_SIZE) *CFunHexAddr[i] = (CFunDefAddr[i] - (unsigned int)MemBuff) + (unsigned int)TempPtr;
+        }
+
+        //******************************************************************************
+        // write the whole library from ram into the W25Q16 library area
+        // First Erase the library and write the header page
+        int pageno=WBLibAddr;
+        SPIOpen();
+        WBEraseArea(blockerase,pageno);
+        j=TempPtr - ProgMemory; // i.e. Option.ProgFlashSize
+        p = GetMemory(256);
+
+#ifdef WRITEHEADERPAGE
+        //Write the header of AA 55 plus Option.ProgFlashSize
+
+        p[0]=0xAA; p[1]=0x55; p[2]=0x55; p[3]=0xAA;  //The AA55 Header
+        p[4]=(j >> 16) & 0xFF; p[5]=(j >> 8) & 0xFF; p[6]=j & 0xFF;
+
+        for(k = 7; k < 256; k++){        // Build the rest of the header page
+             p[k]=255;
+        }
+        //write our header page
+        WBWritePage(pageno++,p);
+        //dump(p,256,pageno-1);
+#endif
+         //now write the library from ram to the windbond library area
+        i=0;
+        for(k = 0; k < m - MemBuff; k++){        // write to the flash byte by byte
+       	   p[i++]=MemBuff[k];
+       	   //p[i++]=15;
+       	   if (i>255){  //write our page
+       	     WBWritePage(pageno++,p);
+       	     //dump(p,256,pageno-1);
+       	     i=0;
+       	   }
+        }
+        //Write last page if required
+        if (i!=0){
+           for(;i<256;i++){p[i]=255;}
+           WBWritePage(pageno++,p);
+        }
+        FreeMemory(p);
+        SPIClose();
+
+        // Update the amount of flash available for ordinary programs
+        Option.ProgFlashSize = TempPtr - ProgMemory;
+        SaveOptions();
+
+        if(MMCharPos > 1) MMPrintString("\r\n");                    // message should be on a new line
+        MMPrintString("Library Saved ");
+        IntToStr(tknbuf, PROG_FLASH_SIZE-Option.ProgFlashSize, 10);
+        MMPrintString(tknbuf);
+        MMPrintString(" bytes\r\n");
+
+        //Now call the new command that will clear the current program memory then
+        //write the library code at Option.ProgFlashSize by copying it from the windbond
+        //and return to the command prompt.
+        cmdline = ""; CurrentLinePtr = NULL;    // keep the NEW command happy
+        cmd_new();                              //  delete the program,add the library code and return to the command prompt
+
+    }
+
+     if(checkstring(cmdline, "DELETE")) {
+        if(Option.ProgFlashSize == PROG_FLASH_SIZE) return;
+
+       // Clear library from W25Q16
+        SPIOpen();
+        WBEraseArea(blockerase,WBLibAddr);
+        SPIClose();
+
+        Option.ProgFlashSize = PROG_FLASH_SIZE;
+        SaveOptions();
+
+        // Clear Program Memory and also the Library at the end.
+        cmdline = ""; CurrentLinePtr = NULL;    // keep the NEW command happy
+        cmd_new();                              //  delete any program,and the library code and return to the command prompt
+
+        //return;
+     }
+
+     if(checkstring(cmdline, "LIST")) {
+        if(Option.ProgFlashSize == PROG_FLASH_SIZE) return;
+        ListProgram(ProgMemory + Option.ProgFlashSize, false);
+        return;
+     }
+/*
+    if(checkstring(cmdline, "READ")) {
+    	      int j;
+    	      SPIOpen();
+    	      int pageno=0;
+    	   	  p = GetMemory(256);
+    	   	  for (j=0;j<20;j++){
+    	   	    pageno=j;
+    	   	    WBReadPage(pageno,p);dump(p,256,pageno);pageno++;
+    	   	  }
+    	      for (j=8064;j<8083;j++){
+    	   	    pageno=j;
+    	   	    WBReadPage(pageno,p);dump(p,256,pageno);pageno++;
+    	   	  }
+
+    	      FreeMemory(p);
+    	      SPIClose();
+    	      return;
+    }
+    if(checkstring(cmdline, "READVAR")) {
+       	      SPIOpen();
+       	      int pageno;
+       	   	  p = GetMemory(256);
+       	   	  for (pageno=WBVarAddr;pageno<WBVarAddr+16;pageno++){
+       	   	      WBReadPage(pageno,p);dump(p,256,pageno);
+       	   	  }
+       	      FreeMemory(p);
+       	      SPIClose();
+       	      return;
+    }
+    if(checkstring(cmdline, "READPROG")) {
+          	      int i=0;
+          	      char *p;char *pr;
+          	   	  p = GetMemory(256);
+          	      pr = ProgMemory;
+          	          while(i<256) {
+          	           p[i]=pr[i];i++;
+
+          	          }
+          	        dump(p,256,i);
+          	      FreeMemory(p);
+          	      return;
+    }
+    if(checkstring(cmdline, "DEBUG")) {
+    	     int i;
+    	         if(Option.ProgFlashSize == PROG_FLASH_SIZE){
+    	        	 i=16;
+    	         }else{
+    	        	 i=(PROG_FLASH_SIZE-Option.ProgFlashSize)/256 +2; //
+    	         }
+           	      SPIOpen();
+           	      int pageno;
+           	   	  p = GetMemory(256);
+           	   	  for (pageno=WBLibAddr;pageno<WBLibAddr+i;pageno++){
+           	   	      WBReadPage(pageno,p);dump(p,256,pageno);
+           	   	  }
+           	      FreeMemory(p);
+           	      SPIClose();
+           	      return;
+    }
+  */
+
+
+    /**********************************************************************************************
+          LIBRARY CHECK will check for the existence of Library code at the end of program memory.
+          Is existence is normally indicated by Option.ProgFlashSize which is set when the library
+          code is saved. If library code is found then Option.ProgFlashSize is set to the library's
+          location.This would only be required after an OPTION RESET or when running without a battery,
+          in which case the Options are set to default at every power on.
+    ***********************************************************************************************/
+    if(checkstring(cmdline, "CHECK")) {  //See if library code exists and set Option.ProgFlashSize
+        	   if(Option.ProgFlashSize == PROG_FLASH_SIZE) { //Only if not already set
+        		   p=ProgMemory;
+        		   while(p<ProgMemory+PROG_FLASH_SIZE) {
+        			  if(*p == 0xff){  //first erased byte on work boundary
+        				 //Find the next used section. Its the library
+        			     while(p<ProgMemory+PROG_FLASH_SIZE) {
+        			    	 if(*p != 0xff){   //Next used word is the library
+        			    		 MMPrintString("Library code located. \r\n");
+        			    		// PIntH((int)( p - ProgMemory));
+        			    		 //Library needs Windbond flash. Check its there.
+        			    		 SPIOpen();
+        			    		 SPIClose();
+        			    		 Option.ProgFlashSize =p - ProgMemory;
+        			    		 SaveOptions();
+        			    		 return;
+        			    	 }
+        			    	  p += 4;
+        			     }
+        			     MMPrintString("No library code exists \r\n");
+        			     //Check Windbond Flash is there anyway
+        			     SPIOpen();
+        			     SPIClose();
+        			     return;
+        			  }
+        		      p += 4;
+        		   }
+        		   MMPrintString("NO ERASED BYTES FOUND \r\n");
+
+        	   }else{
+        		     MMPrintString("Library code exists. \r\n");
+        		     //Check Windbond Flash is there
+        		     SPIOpen();
+        		     SPIClose();
+        	   }
+               return;
+        }
+   /*
+    if(checkstring(cmdline, "WRITE")) {
+       	      int i,j;
+       	      SPIOpen();
+       	    //  int pageno=0;
+       		  p = GetMemory(256);
+       		  for (j=0;j<20;j++){
+       		    for (i=0;i<256;i++){p[i]=j;}
+       	        WBWritePage(j,p);
+       		  }
+       		  for (j=0;j<16;j++){
+       		     for (i=0;i<256;i++){p[i]=j;}
+       		     WBWritePage(j+WBVarAddr,p);
+       		  }
+       		 for (j=0;j<16;j++){
+       		     for (i=0;i<256;i++){p[i]=j;}
+       		      WBWritePage(j+WBLibAddr,p);
+       		 }
+       	      FreeMemory(p);
+       	      SPIClose();
+       	      return;
+       }
+
+    if(checkstring(cmdline, "ERASEALL")) {
+    	//int pin=77;  //35 or 77 for mini
+    	       SPIOpen();
+    	      // p = GetMemory(256);
+    	       WBEraseArea(eraseall,0);
+    	      // FreeMemory(p);
+    	       SPIClose();
+               return;
+    }
+    if(checkstring(cmdline, "ERASESECTOR")) {
+        	       SPIOpen();
+        	       WBEraseArea(sectorerase,0);
+        	       SPIClose();
+                   return;
+    }
+    if(checkstring(cmdline, "ERASEBLOCK")) {
+           	      SPIOpen();
+           	      WBEraseArea(blockerase,8064);
+           	      SPIClose();
+                  return;
+    }
+    if(checkstring(cmdline, "PRINT")) {
+    	  SPIOpen();
+
+              //sectorerase 0x20  // 4K 16 pages
+              // blockerase 0x52   // 32K 128 pages
+              // block2erase 0xD8  //64K 256 pages
+             // eraseall 0xC7
+
+       int pageno=WBLibAddr;
+       char *p;
+
+       	p = GetMemory(256);
+       	pageno=0;
+       	WBReadPage(pageno,p);dump(p,256,pageno);pageno++;
+
+        MMPrintString("Start Write \r\n");
+        pageno=8064;
+        WBWritePage(pageno++,p);
+        WBReadPage(pageno-1,p); dump(p,256,pageno-1);
+
+        WBReadPage(pageno,p); dump(p,256,pageno);
+        WBWritePage(pageno++,p);
+        WBReadPage(pageno-1,p); dump(p,256,pageno-1);
+
+        WBReadPage(pageno,p); dump(p,256,pageno);
+        WBWritePage(pageno++,p);
+        WBReadPage(pageno-1,p); dump(p,256,pageno-1);
+
+        WBReadPage(pageno,p); dump(p,256,pageno);
+        WBWritePage(pageno++,p);
+        WBReadPage(pageno-1,p); dump(p,256,pageno-1);
+
+        FreeMemory(p);
+
+         SPIClose();
+        // MMPrintString("SPI1 Closed \r\n");
+         return;
+    }
+    */
+    error("Unknown command");
+}
+/***********************************************************************************
+  Copy the library stored in WB flash to the end of the Program memory
+  Assumes that the FlashWriteInit() has been called and flash has been erased
+  and any program has already been written. Appends starting at Option.ProgFlashSize
+ **********************************************************************************/
+void AppendLibrary(int msg){
+        int i,j,k;
+        char *p;
+	    if(Option.ProgFlashSize == PROG_FLASH_SIZE)return;
+	    //Check library is valid
+	    SPIOpen();
+	    int pageno;
+	    pageno=WBLibAddr;
+	    p = GetMemory(256);
+#ifdef WRITEHEADERPAGE
+	    WBReadPage(pageno,p);
+
+	    if (p[0]!=0xAA || p[1]!=0x55 || p[2]!=0x55 || p[3]!=0xAA)error("Library-Invalid Header");
+
+	    j=p[4]<<16 | p[5]<<8 | p[6];
+	    if (j!=Option.ProgFlashSize)error("Library-Size mismatch");
+
+#endif
+       //Now append the library code from WindBond Flash
+	   FlashSetAddress(Option.ProgFlashSize) ;
+	   k=Option.ProgFlashSize;                                      // starting point
+       //j=WBLibAddr+1+(PROG_FLASH_SIZE-Option.ProgFlashSize)/256+1;  //calculate last flash page
+       j=WBLibAddr+(PROG_FLASH_SIZE-Option.ProgFlashSize)/256+1;  //calculate last flash page
+       //for (pageno=WBLibAddr+1;pageno<=j;pageno++){
+       for (pageno=WBLibAddr;pageno<=j;pageno++){
+  //	   PIntComma(pageno);PIntComma(k); MMPrintString(" \r\n");
+         WBReadPage(pageno,p);//dump(p,256,pageno);
+         for (i=0;i<256;i++){
+      	   if (k < PROG_FLASH_SIZE){
+      		  FlashWriteByte(p[i]);k++;
+    	   }
+         }
+       }
+       FlashWriteClose();
+       FreeMemory(p);
+       SPIClose();
+      // if(msg) {                                                       // if requested by the caller, print an informative message
+      //        if(MMCharPos > 1) MMPrintString("\r\n");                    // message should be on a new line
+      //        MMPrintString("Library Appended ");
+      //        IntToStr(tknbuf, PROG_FLASH_SIZE-Option.ProgFlashSize, 10);
+      //        MMPrintString(tknbuf);
+      //        MMPrintString(" bytes\r\n");
+      // }
+      //MMPrintString("Library Appended \r\n");
+}
+
+void WBEraseArea(int erasemode,int pageno){
+
+	 int add;
+     unsigned char s,q;
+     PinSetBit(Option.FLASH_CS,LATCLR);
+       SPIsend1(writeenable);
+     PinSetBit(Option.FLASH_CS,LATSET);
+     uSec(100);
+
+
+        // MMPrintString("Start Block Erase\r\n");
+         //BLOCK ERASE
+         add=(pageno<<8); //convert page number to byte number
+         PinSetBit(Option.FLASH_CS,LATCLR);
+          SPIsend1(erasemode); //
+         //PinSetBit(pin,LATSET);
+         uSec(100);
+         if (erasemode!=eraseall){ //send the address
+           //PinSetBit(pin,LATCLR);
+            SPIsend1((add>>16) & 0xFF);
+            SPIsend1((add>>8) & 0xFF);
+            SPIsend1(add & 0xFF);
+         }
+         PinSetBit(Option.FLASH_CS,LATSET);
+    	 uSec(100000);
+
+    	// MMPrintString("Start Wait \r\n");
+    	 s=0;
+    	 do {
+    	         uSec(100000);
+    	         PinSetBit(Option.FLASH_CS,LATCLR);
+    	          SPIsend1(readstatus1);
+    	          HAL_SPI_TransmitReceive(&hspi1,&s,&q,1,500);
+    	         PinSetBit(Option.FLASH_CS,LATSET);
+    	 } while(q & 1);
+    	 PinSetBit(Option.FLASH_CS,LATCLR);
+    	 SPIsend1(writedisable);
+    	 PinSetBit(Option.FLASH_CS,LATSET);
+
+
+}
+void WBWritePage(int pageno,char *p){
+
+	 int add,i=0;
+     unsigned char s,q;
+     PinSetBit(Option.FLASH_CS,LATCLR);
+       SPIsend1(writeenable);
+     PinSetBit(Option.FLASH_CS,LATSET);
+     uSec(100);
+     add=(pageno<<8); //convert page number to byte number
+     PinSetBit(Option.FLASH_CS,LATCLR);
+	 SPIsend1(pagewrite);
+     SPIsend1((add>>16) & 0xFF);
+	 SPIsend1((add>>8) & 0xFF);
+	 SPIsend1(add & 0xFF);
+
+	 for (i=0;i<256;i++){
+		SPIsend1(p[i]);
+       //HAL_SPI_Receive(&hspi1,(uint8_t *)p[i],1,500);  //read a page
+	   //HAL_SPI_Receive(&hspi1,(char *)p,256,500);  //read a page
+	  }
+	  PinSetBit(Option.FLASH_CS,LATSET);
+	  uSec(1000);
+	 //MMPrintString("Start Wait \r\n");
+	  s=0;
+	  do {
+	         uSec(100);
+	         PinSetBit(Option.FLASH_CS,LATCLR);
+	          SPIsend1(readstatus1);
+	          HAL_SPI_TransmitReceive(&hspi1,&s,&q,1,500);
+             PinSetBit(Option.FLASH_CS,LATSET);
+	  } while(q & 1);
+	  //MMPrintString("End  Wait \r\n");
+	  PinSetBit(Option.FLASH_CS,LATCLR);
+	    SPIsend1(writedisable);
+      PinSetBit(Option.FLASH_CS,LATSET);
+      //dump(p,256,pageno+100);
+
+}
+
+void WBReadPage(int pageno,char *p){
+	// MMPrintString("-------------------------------Read Start ");
+	 int add,i=0;
+     unsigned char s,r;
+     PinSetBit(Option.FLASH_CS,LATCLR);
+
+     add=(pageno<<8); //convert page number to byte number
+	 SPIsend1(readdata);
+	 SPIsend1((add>>16) & 0xFF);
+	 SPIsend1((add>>8) & 0xFF);
+	 SPIsend1(add & 0xFF);
+
+	 s=0;
+	 for (i=0;i<256;i++){
+		 uSec(100);
+		 HAL_SPI_TransmitReceive(&hspi1,&s,&r,1,500);
+		 p[i]=r;
+       //HAL_SPI_Receive(&hspi1,(uint8_t *)p[i],1,500);  //read a page
+	   //HAL_SPI_Receive(&hspi1,(char *)p,256,500);  //read a page
+	 }
+
+     PinSetBit(Option.FLASH_CS,LATSET);
+     //MMPrintString("-------------------------------Read End ");
+}
+
+/*********************************************************************************************
+ Initialise the Flash CS pin so that its does not affect the use of SPI1. The Windbond flash
+ is connected to SPI 1 so its CS needs to be high. The CS pin is 35 on the VET6 and 77 on the
+ VET6 Mini. Pin 35 is also PWM 1C so can only be used for one of or the other.
+ Option FLASH_CS 0 will prevent the CS pin being initialised at startup. Default value is 35.
+ *********************************************************************************************/
+void InitFlash_CS(){
+	if(Option.FLASH_CS !=0)SetAndReserve(Option.FLASH_CS, P_OUTPUT, 1, EXT_BOOT_RESERVED);
+}
+
+void SPIOpen(void) {
+	        //Option.FLASH_CS is 35 for VET6 or 77 for VET6 Mini
+	        int id;
+		    unsigned char s,r1,r2,r3;
+	        if(ExtCurrentConfig[SPI_OUT_PIN] == EXT_COM_RESERVED) error("SPI1 Already open");
+
+	       // hspi1.Init.BaudRatePrescaler =SPI_BAUDRATEPRESCALER_16;    //3MHz
+	       // hspi1.Init.BaudRatePrescaler =SPI_BAUDRATEPRESCALER_8;     //6MHz
+	       hspi1.Init.BaudRatePrescaler =SPI_BAUDRATEPRESCALER_4;     //12MHz
+	       // hspi1.Init.BaudRatePrescaler =SPI_BAUDRATEPRESCALER_2;     //24MHz
+	       hspi1.Init.DataSize = SPI_DATASIZE_8BIT;
+	       hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
+	       hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
+
+	       ExtCfg(SPI_OUT_PIN, EXT_COM_RESERVED, 0);
+	       ExtCfg(SPI_INP_PIN, EXT_COM_RESERVED, 0);
+	       ExtCfg(SPI_CLK_PIN, EXT_COM_RESERVED, 0);
+	       HAL_SPI_DeInit(&hspi1);
+	       HAL_SPI_Init(&hspi1);
+
+	       PinSetBit(Option.FLASH_CS,LATCLR);
+	       SPIsend1(JEDEC);
+	       s=0;
+	       uSec(100);
+	       HAL_SPI_TransmitReceive(&hspi1,&s,&r1,1,500);
+	       uSec(100);
+	       HAL_SPI_TransmitReceive(&hspi1,&s,&r2,1,500);
+	       uSec(100);
+	       HAL_SPI_TransmitReceive(&hspi1,&s,&r3,1,500);
+	       PinSetBit(Option.FLASH_CS,LATSET);
+	       id=r1*256*256+r2*256+r3 ;
+	      // PIntH(id);
+	       if (id==0x0 || id==0xFFFFFF){SPIClose(); error("No flash.Check Option_FLASH_CS");}
+
+
+}
+// erase all battery backup memory and reset the options to their defaults
+// used on initial firmware run if options appear corrupt or not set
+void ResetAllBackupRam(void) {
 	ResetAllOptions();
-	PROG_FLASH_SIZE = 0x20000;
-//    PROG_FLASH_SIZE = PROG_FLASH_SIZE;
 	SaveOptions();                                     //  and write them to flash
 	ClearSavedVars();					           	   // erase saved vars
-//    FlashWriteInit(SAVED_VARS_FLASH);           	   // erase saved vars
+}
+
+// erase all flash memory clear save vars and reset the options to their defaults
+// used  when the user shorts pins 9 an 10 together on startup i.e. KEY 1 power up
+void ResetAllFlash(void) {
+	ResetAllOptions();
+	SaveOptions();                                     //  and write them to flash
+	ClearSavedVars();					           	   // erase saved vars
     FlashWriteInit(PROGRAM_FLASH);                     // erase program memory
     FlashWriteByte(0); FlashWriteByte(0);              // terminate the program in flash
     FlashWriteClose();
-
-
 }
 
 /**

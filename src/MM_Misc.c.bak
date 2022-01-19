@@ -66,17 +66,6 @@ extern volatile int keyboardseen;
 extern USBD_HandleTypeDef hUsbDeviceFS;
 extern uint64_t TIM12count;
 extern TIM_HandleTypeDef htim12;
-#ifdef POKE_DISPLAY
- extern void WriteSSD1963Command(int cmd);
- extern void WriteDataSSD1963(int data);
-#endif
-#ifdef SET_TERMINAL
- void setterminal(void);
- extern int terminal_width,terminal_height;
-#endif
-
-char *CSubInterrupt;
-volatile int CSubComplete=0;
 
 void integersort(int64_t *iarray, int n, long long *index, int flags, int startpoint){
     int i, j = n, s = 1;
@@ -1295,22 +1284,6 @@ void cmd_settick(void){
     }
 }
 
-#ifdef SET_TERMINAL
-
-void setterminal(void){
-
-	 if(Option.DISPLAY_CONSOLE)return;
-	  char sp[20]={0};
-	  strcpy(sp,"\033[8;");
-	  IntToStr(&sp[strlen(sp)],Option.Height,10);
-	  strcat(sp,";");
-	  IntToStr(&sp[strlen(sp)],Option.Width,10);
-	  strcat(sp,"t");
-	  //SSPrintString(sp);						//
-	  SerUSBPutS(sp);
-}
-
-#endif
 
 void cmd_option(void) {
     char *tp;
@@ -1371,14 +1344,14 @@ void cmd_option(void) {
     tp = checkstring(cmdline, "BAUDRATE");
     if(tp) {
         if(Option.SerialConDisabled!=0)error("Invalid with USB console");
-        //if(CurrentLinePtr) error("Invalid in a program");                    //G.A.
+        if(CurrentLinePtr) error("Invalid in a program");
         int i;
         i = getinteger(tp);
         if(i > PeripheralBusSpeed/17) error("Baud rate too high");
         if(i < 100) error("Number out of bounds");
         Option.Baudrate = i;
-        if(!CurrentLinePtr)SaveOptions();    // G.A.
-        if(!CurrentLinePtr)MMPrintString("Restart to activate");                // set the console baud rate G.A.
+        SaveOptions();
+        MMPrintString("Restart to activate");                // set the console baud rate
         return;
     }
     tp = checkstring(cmdline, "VCC");
@@ -1405,19 +1378,10 @@ void cmd_option(void) {
         getargs(&tp, 3, ",");
         if(Option.DISPLAY_CONSOLE) error("Cannot change LCD console");
         Option.Height = getint(argv[0], 5, 100);
-
-        if(argc == 3) Option.Width = getint(argv[2], 37, 240);
-
-#ifdef SET_TERMINAL
-       // terminal_height=Option.Height;
-       // terminal_width=Option.Width;
-        setterminal();
-#endif
-
+        if(argc == 3) Option.Width = getint(argv[2], 37, 132);
         SaveOptions();
         return;
     }
-
     tp = checkstring(cmdline, "LCDPANEL");
     if(tp) {
         getargs(&tp, 13, ",");
@@ -1438,23 +1402,6 @@ void cmd_option(void) {
     if(tp) {
         if(checkstring(tp, "ON"))       { Option.ColourCode = true; SaveOptions(); return; }
         if(checkstring(tp, "OFF"))      { Option.ColourCode = false; SaveOptions(); return;  }
-    }
-
-
-
-    tp = checkstring(cmdline, "SAVE");
-    if(tp) {
-        if(!CurrentLinePtr) return;
-
-        //if(SaveOptions()) {
-        if(Option.Restart==false){
-        	 Option.Restart=true;
-        	 SaveOptions();
-            // Restart on first pass
-            _excep_code = RESTART_DOAUTORUN;
-            SoftReset();                            // this will restart the processor
-        }
-        return;
     }
 
     OtherOptions();
@@ -1487,60 +1434,29 @@ void fun_info(void){
     } else {
         if(checkstring(ep, "CPUSPEED")){
             IntToStr(sret,SystemCoreClock,10);
-            CtoM(sret);
-            targ=T_STR;
-
         } else if(checkstring(ep, "AUTORUN")){
             if(Option.Autorun == false)strcpy(sret,"Off");
             else strcpy(sret,"On");
-            CtoM(sret);
-            targ=T_STR;
-
         } else if(checkstring(ep, "LCDPANEL")){
             strcpy(sret,LCDList[(int)Option.DISPLAY_TYPE]);
-            CtoM(sret);
-            targ=T_STR;
-
         } else if(checkstring(ep, "LCDPANELID")){
-        	iret= Option.SSDspeed;
-        	targ=T_INT;
-
-        } else if(checkstring(ep, "RESTART")){
-             iret= Option.Restart;
-             targ=T_INT;
-
-        } else if(checkstring(ep, "CURSORPOS")){
-            iret= MMCharPos;
-            targ=T_INT;
-
-        } else if(checkstring(ep, "HEIGHT")){
-        	iret= Option.Height;
-        	targ=T_INT;
-
-        } else if(checkstring(ep, "WIDTH")){
-        	iret= (int64_t)Option.Width;
-        	targ=T_INT;
+        	 if(Option.SSDspeed == 1)strcpy(sret,"1");
+        	  else strcpy(sret,"0");
 
         } else if(checkstring(ep, "TOUCH")){
             if(Option.TOUCH_CS == false)strcpy(sret,"Disabled");
             else if(Option.TOUCH_XZERO == TOUCH_NOT_CALIBRATED)strcpy(sret,"Not calibrated");
             else strcpy(sret,"Ready");
-            CtoM(sret);
-            targ=T_STR;
-
         } else if(checkstring(ep, "SDCARD")){
             int i=OptionFileErrorAbort;
             OptionFileErrorAbort=0;
             if(!InitSDCard())strcpy(sret,"Not present");
             else  strcpy(sret,"Ready");
             OptionFileErrorAbort=i;
-
-            CtoM(sret);
-            targ=T_STR;
-
         } else error("Syntax");
     }
-
+    CtoM(sret);
+    targ=T_STR;
 }
 
 void cmd_watchdog(void) {
@@ -1721,20 +1637,6 @@ void cmd_cpu(void) {
     } else error("Syntax");
 }
 
-void cmd_csubinterrupt(void){
-    getargs(&cmdline,1,",");
-    if(argc != 0){
-        if(checkstring(argv[0],"0")){
-            CSubInterrupt = NULL;
-            CSubComplete=0;
-        } else {
-            CSubInterrupt = GetIntAddress(argv[0]);
-            CSubComplete=0;
-            InterruptUsed = true;
-        }
-    } else CSubComplete=1;
-}
-
 void cmd_cfunction(void) {
     char *p, EndToken;
     EndToken = GetCommandValue("End DefineFont");           // this terminates a DefineFont
@@ -1775,41 +1677,6 @@ unsigned int GetPokeAddr(char *p) {
 void cmd_poke(void) {
     char *p;
     void *pp;
-
-#ifdef POKE_DISPLAY
-    char *q;
-    if((p = checkstring(cmdline, "DISPLAY"))){
-        if(!Option.DISPLAY_TYPE)error("Display not configured");
-        if((q=checkstring(p,"HRES"))){
-            HRes=getint(q,0,1920);
-        } else if((q=checkstring(p,"VRES"))){
-            VRes=getint(q,0,1200);
-
-        } else {
-            getargs(&p,(MAX_ARG_COUNT * 2) - 3,",");
-            if(!argc)return;
-            if((Option.DISPLAY_TYPE >= SSD_PANEL_START && Option.DISPLAY_TYPE <= SSD_PANEL_END) || (Option.DISPLAY_TYPE >= P16_PANEL_START &&  Option.DISPLAY_TYPE <= P16_PANEL_END )){
-
-            	WriteSSD1963Command(getinteger(argv[0]));
-                for(int i = 2; i < argc; i += 2) {
-                   	WriteDataSSD1963(getinteger(argv[i]));
-                }
-                return;
-            } else if(Option.DISPLAY_TYPE>=SPI_PANEL_START && Option.DISPLAY_TYPE<=SPI_PANEL_END){
-                spi_write_command(getinteger(argv[0]));
-                for(int i = 2; i < argc; i += 2) {
-                    spi_write_data(getinteger(argv[i]));
-                }
-                return;
-           // } else if(Option.DISPLAY_TYPE<=I2C_PANEL){
-           //     if(argc>1)error("UNsupported command");
-           //     I2C_Send_Command(getinteger(argv[0]));
-            } else
-            error("Display not supported");
-
-        } //error("Syntax");
-    } else {
-#endif
 
     getargs(&cmdline, 5, ",");
     if((p = checkstring(argv[0], "BYTE"))) {
@@ -1879,9 +1746,8 @@ void cmd_poke(void) {
     // the default is the old syntax of:   POKE hiaddr, loaddr, byte
     *(char *)(((int)getinteger(argv[0]) << 16) + (int)getinteger(argv[2])) = getinteger(argv[4]);
 }
-#ifdef POKE_DISPLAY
-}
-#endif
+
+
 // function to find a CFunction
 // only used by fun_peek() below
 unsigned int GetCFunAddr(int *ip, int i) {
@@ -1907,20 +1773,7 @@ unsigned int GetPeekAddr(char *p) {
     return i;
 }
 
-/*	p = checkstring(cmdline, "NVM");
-	if(p) {
-    	char *q=NULL;
-    	int i;
-    	uint32_t *qq;
-    	q = findvar(p, V_FIND);
-    	if(!(vartbl[VarIndex].type & T_STR)) error("Invalid variable");
-    	qq=(uint32_t*)q;
-		for(i=0;i<20;i++){
-			qq[i]=HAL_RTCEx_BKUPRead (&hrtc, i);
-		}
-		q=CtoM(q);
-		return;
-	}*/
+
 // Will return a byte within the PIC32 virtual memory space.
 void fun_peek(void) {
     char *p;
@@ -1950,8 +1803,6 @@ void fun_peek(void) {
         if(i == -1 || !(*subfun[i] == cmdCSUB)) error("Invalid argument");
         // search through program flash and the library looking for a match to the function being called
         j = GetCFunAddr((int *)CFunctionFlash, i);
-        //if(!j) error("Internal fault 6(sorry)");
-        if(!j) j = GetCFunAddr((int *)CFunctionLibrary, i);    //Check the library
         if(!j) error("Internal fault 6(sorry)");
         iret = (unsigned int)j;                                     // return the entry point
         targ = T_INT;
@@ -1984,9 +1835,6 @@ void fun_peek(void) {
         return;
         }
 
-
-
-
     if(argc != 3) error("Syntax");
 
     if((checkstring(argv[0], "PROGMEM"))){
@@ -2007,20 +1855,6 @@ void fun_peek(void) {
         targ = T_INT;
         return;
     }
-
-
-
-    if((p = checkstring(argv[0], "OPTION"))){
-    	       int i;
-    	       i=getint(argv[2],0, 79);
-    	       //j=i>>2;
-               iret=HAL_RTCEx_BKUPRead (&hrtc,i>>2);
-               i=i&3;
-               iret=iret>>8*i;
-               iret=iret&0xFF;
-               targ = T_INT;
-               return;
-               }
 
     // default action is the old syntax of  b = PEEK(hiaddr, loaddr)
     iret = *(char *)(((int)getinteger(argv[0]) << 16) + (int)getinteger(argv[2]));
@@ -2079,9 +1913,8 @@ void MIPS16 cmd_autosave(void) {
     ClearProgram();                                                 // clear any leftovers from the previous program
     p = buf = GetTempMemory(EDIT_BUFFER_SIZE);
     CrunchData(&p, 0);                                              // initialise the crunch data subroutine
-    //while((c = (getConsole() & 0x7f)) != 0x1a) {                    // while waiting for the end of text char
-    while((c = MMInkey()) != 0x1a && c!=F1 && c!=F2) {                    // while waiting for the end of text char
-    	if(p == buf && c == '\n') continue;                         // throw away an initial line feed which can follow the command
+    while((c = (getConsole() & 0x7f)) != 0x1a) {                    // while waiting for the end of text char
+        if(p == buf && c == '\n') continue;                         // throw away an initial line feed which can follow the command
         if((p - buf) >= EDIT_BUFFER_SIZE) error("Not enough memory");
         if(IsPrint(c) || c == '\r' || c == '\n' || c == TAB) {
             if(c == TAB) c = ' ';
@@ -2100,12 +1933,6 @@ void MIPS16 cmd_autosave(void) {
     while(getConsole() != -1);                                      // clear any rubbish in the input
 //    ClearSavedVars();                                               // clear any saved variables
     SaveProgramToFlash(buf, true);
-    if(c==F2){
-        ClearVars(0);
-        strcpy(inpbuf,"RUN\r\n");
-        tokenise(true);                                             // turn into executable code
-        ExecuteProgram(tknbuf);                                     // execute the line straight away
-    }
 }
 
 
@@ -2128,7 +1955,6 @@ GUI Int Down (MM+ only)
 GUI Int Up (MM+ only)
 WAV Finished (MM+ only)
 IR Receive
-Interrupt command/CSub Interrupt
 I/O Pin Interrupts in order of definition
 Tick Interrupts (1 to 4 in that order)
 
@@ -2259,13 +2085,6 @@ int check_interrupt(void) {
         intaddr = KeypadInterrupt;                                  // set the next stmt to the interrupt location
         goto GotAnInterrupt;
     }
-
-    if(CSubInterrupt != NULL && CSubComplete) {
-       	intaddr = CSubInterrupt;                                  // set the next stmt to the interrupt location
-    	CSubComplete=0;
-    	goto GotAnInterrupt;
-    }
-
 
     for(i = 0; i < NBRINTERRUPTS; i++) {                            // scan through the interrupt table
         if(inttbl[i].pin != 0) {                                    // if this entry has an interrupt pin set
