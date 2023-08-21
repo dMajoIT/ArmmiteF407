@@ -8,11 +8,14 @@ Compiled version and documentation is available ........
 
 Change list from V5.07.00
 
+V5.07.02b0
+Initial release oif V5.07.02
 
-# ArmmiteF407 5.07.02b0
 
 
-# PicoMite MMBasic
+
+
+Armmite F407 MMBasic
 
 Geoff Graham, Peter Mather Copyright (c) 2021, All rights reserved.
 
