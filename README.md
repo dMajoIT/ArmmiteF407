@@ -7,7 +7,7 @@ Compiled version and documentation is available ........
 
 Change list from V5.07.00
 
-V5.07.02b0
+V5.07.02b0:
 Initial release of V5.07.02
 
 
