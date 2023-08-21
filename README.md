@@ -1,4 +1,4 @@
-Files to build the Armmite F4 MMBasic running on the # ArmmiteF407 
+Files to build the Armmite F4 MMBasic running on the STM32F407VET6
 
 
 
