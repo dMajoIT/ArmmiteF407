@@ -7,11 +7,11 @@ Compiled version and documentation is available ........
 
 Change list from V5.07.00
 
-V5.07.02b1:
-Added ST7735S Display
-Fix Not Enough Memmory error when using EDIT command with OPTION LCDPANEL CONSOLE on with  non SSD1963 display.
+V5.07.02b1:  
+Added ST7735S Display  
+Fixed 'Not Enough Memory' error when using EDIT command with OPTION LCDPANEL CONSOLE on with  non SSD1963 display.
 
-V5.07.02b0:
+V5.07.02b0:  
 Initial release of V5.07.02
 
 
