@@ -1457,6 +1457,15 @@ void MIPS16 cmd_read(void) {
     // setup for a search through the whole memory
     vidx = 0;
     datatoken = GetCommandValue("Data");
+    //If there has been no RESTORE then default the search to the current Program Area i.e.Main or Library
+   // if (NextDataLine==0){
+   //    NextData=0;
+   //    if(CurrentLinePtr >= ProgMemory + Option.ProgFlashSize){
+   // 	 NextDataLine = ProgMemory + Option.ProgFlashSize;
+   //    }else{
+   // 	 NextDataLine = ProgMemory;
+   //    }
+   //  }
     p = lineptr = NextDataLine;
     if(*p == 0xff) error("No DATA to read");                        // error if there is no program
 
@@ -1592,6 +1601,8 @@ search_again:
             NextData += 2;
         }
     }
+   // NextDataLine = 0;
+
 }
 
 void cmd_call(void){    //updated with fix from picomite 5.07.08b3

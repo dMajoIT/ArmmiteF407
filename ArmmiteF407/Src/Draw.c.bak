@@ -256,68 +256,16 @@ void cmd_guiMX170(void) {
 
     error("Unknown command");
 }
-/* This used by the BLIT commands. It uses temporary memory*/
-char *blitmemoryCmd;
+char *blitmemory;
 #define blitmemorysize 2560+RAMPAGESIZE
-void DoBlitCmd(int x1, int y1, int x2, int y2, int w, int h){
-    int max_x;
-    char *buff;
-    int multiplier=3;
-    blitmemoryCmd=GetTempMemory(blitmemorysize);
-    if((w*h*multiplier)>blitmemorysize-RAMPAGESIZE){ //need to use alternative copy
-        if(x1 >=x2) {
-            max_x=(blitmemorysize-RAMPAGESIZE)/h/multiplier;
-            buff=blitmemoryCmd;
-            while(w > max_x){
-                ReadBuffer(x1,y1,x1+max_x-1,y1+h-1,buff);
-                DrawBuffer(x2,y2,x2+max_x-1,y2+h-1,buff);
-                x1+=max_x;
-                x2+=max_x;
-                w-=max_x;
-            }
-            ReadBuffer(x1,y1,x1+w-1,y1+h-1,buff);
-            DrawBuffer(x2,y2,x2+w-1,y2+h-1,buff);
-            FreeMemory(buff);
-            return;
-        } else {
-            int start_x1,start_x2;
-            max_x=(blitmemorysize-RAMPAGESIZE)/h/multiplier;
-            buff=blitmemoryCmd;
-            start_x1=x1+w-max_x;
-            start_x2=x2+w-max_x;
-            while(w > max_x){
-                ReadBuffer(start_x1,y1,start_x1+max_x-1,y1+h-1,buff);
-                DrawBuffer(start_x2,y2,start_x2+max_x-1,y2+h-1,buff);
-                w-=max_x;
-                start_x1-=max_x;
-                start_x2-=max_x;
-            }
-            ReadBuffer(x1,y1,x1+w-1,y1+h-1,buff);
-            DrawBuffer(x2,y2,x2+w-1,y2+h-1,buff);
-            FreeMemory(buff);
-            return;
-        }
-    } else {
-        buff=blitmemoryCmd;
-        ReadBuffer(x1,y1,x1+w-1,y1+h-1,buff);
-        DrawBuffer(x2,y2,x2+w-1,y2+h-1,buff);
-        FreeMemory(buff);
-    }
-}
-
-/* This used when OPTION LCDPANEL CONSOLE is set and scrolling LCDPanels that don't
- * support hardware scrolling. Its 1K buffer is allocated in CCRAM so that it still
- * has memory when the Edit command uses all available temporary ram for editting.
-*/
-char blitmemory[1024*1];
 void DoBlit(int x1, int y1, int x2, int y2, int w, int h){
     int max_x;
     char *buff;
     int multiplier=3;
-    int memory=sizeof(blitmemory);
-    if((w*h*multiplier)>memory-RAMPAGESIZE){ //need to use alternative copy
+    blitmemory=GetTempMemory(blitmemorysize);
+    if((w*h*multiplier)>blitmemorysize-RAMPAGESIZE){ //need to use alternative copy
         if(x1 >=x2) {
-            max_x=(memory-RAMPAGESIZE)/h/multiplier;
+            max_x=(blitmemorysize-RAMPAGESIZE)/h/multiplier;
             buff=blitmemory;
             while(w > max_x){
                 ReadBuffer(x1,y1,x1+max_x-1,y1+h-1,buff);
@@ -332,7 +280,7 @@ void DoBlit(int x1, int y1, int x2, int y2, int w, int h){
             return;
         } else {
             int start_x1,start_x2;
-            max_x=(memory-RAMPAGESIZE)/h/multiplier;
+            max_x=(blitmemorysize-RAMPAGESIZE)/h/multiplier;
             buff=blitmemory;
             start_x1=x1+w-max_x;
             start_x2=x2+w-max_x;
@@ -355,7 +303,6 @@ void DoBlit(int x1, int y1, int x2, int y2, int w, int h){
         FreeMemory(buff);
     }
 }
-
 void cmd_blit(void){
     int x1, y1, x2, y2, w, h, bnbr;
     char *p;
@@ -425,7 +372,7 @@ void cmd_blit(void){
     	 if(y1 + h > VRes) h = VRes - y1;
     	 if(y2 + h > VRes) h = VRes - y2;
     	 if(w < 1 || h < 1 || x1 < 0 || x1 + w > HRes || x2 < 0 || x2 + w > HRes || y1 < 0 || y1 + h > VRes || y2 < 0 || y2 + h > VRes) return;
-    	 DoBlitCmd( x1, y1, x2, y2, w, h);
+    	 DoBlit( x1, y1, x2, y2, w, h);
      }
 }
 

@@ -811,6 +811,10 @@ void MIPS16 STR_REPLACE(char *target, const char *needle, const char *replacemen
 		if(toggle && *ip=='='){
 			*ip=0xFD;
 		}
+		ip++;                     //future proof for BASE$ function combining HEX$,OCT$,BIN$
+		if(toggle && *ip=='('){   //exclude "HEX$(.." replacements in a string
+			*ip=0xFC;
+		}
 		ip++;
 	}
 	str_replace(target, needle, replacement);
@@ -819,6 +823,7 @@ void MIPS16 STR_REPLACE(char *target, const char *needle, const char *replacemen
 		if(*ip==0xFF)*ip=' ';
 		if(*ip==0xFE)*ip='.';
 		if(*ip==0xFD)*ip='=';
+		if(*ip==0xFC)*ip='(';
 		ip++;
 	}
 
@@ -3106,6 +3111,7 @@ void ClearVars(int level) {
 void MIPS16 ClearStack(void) {
     NextData = 0;
 	NextDataLine = ProgMemory;
+    //NextDataLine=0;
     forindex = 0;
     doindex = 0;
     gosubindex = 0;

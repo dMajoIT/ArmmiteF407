@@ -1122,7 +1122,7 @@ void printScreen(void) {
 	for(i = 0; i <VHeight; i++) {
 		printLine(i + edy);
         PRet();
-        MX470PutS("\r\n", gui_fcolour, gui_bcolour);
+        //MX470PutS("\r\n", gui_fcolour, gui_bcolour);   //Fix for double spacing in edit mode.   Gerry 27/08/2023
 		curx = 0;
 		cury = i + 1;
 	}

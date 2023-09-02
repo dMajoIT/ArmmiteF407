@@ -88,6 +88,8 @@ void MIPS16 ConfigDisplaySPI(char *p) {
     	DISPLAY_TYPE = ST7789;
     } else if(checkstring(argv[0], "ST7735")) {
     	DISPLAY_TYPE = ST7735;
+    } else if(checkstring(argv[0], "ST7735S")) {
+       	DISPLAY_TYPE = ST7735S;
     } else if(checkstring(argv[0], "GC9A01")) {
     	DISPLAY_TYPE = GC9A01;
 	} else
@@ -508,20 +510,35 @@ void MIPS16 InitDisplaySPI(int fullinit) {
 
 		       break;
 
-
+         case ST7735S:
          case ST7735:
         	  LCDAttrib=2;  //B0=ReadBuffer B1=RGB565
-              DisplayHRes = 160;
-              DisplayVRes = 128;
-              ResetController();
-              SendCommandBlock(ST7735Init);  //send the block of commands
-              switch(Option.DISPLAY_ORIENTATION) {
-              	  case LANDSCAPE:     spi_write_cd(ILI9341_MEMCONTROL,1,ST7735_Landscape ); break;
-              	  case PORTRAIT:      spi_write_cd(ILI9341_MEMCONTROL,1,ST7735_Portrait ); break;
-              	  case RLANDSCAPE:    spi_write_cd(ILI9341_MEMCONTROL,1,ST7735_Landscape180 ); break;
-              	  case RPORTRAIT:     spi_write_cd(ILI9341_MEMCONTROL,1,ST7735_Portrait180 ); break;
-              }
-              break;
+        	  DisplayHRes = 160;
+        	  ResetController();
+        	  SendCommandBlock(ST7735Init);  //send the block of commands
+        	  if (Option.DISPLAY_TYPE==ST7735){
+                 DisplayVRes = 128;
+        	  }else{
+        		DisplayVRes = 80;
+        		spi_write_cd(ST7735_INVON,1,0);
+        	  }
+
+             // switch(Option.DISPLAY_ORIENTATION) {
+             // 	  case LANDSCAPE:     spi_write_cd(ILI9341_MEMCONTROL,1,ST7735_Landscape ); break;
+             // 	  case PORTRAIT:      spi_write_cd(ILI9341_MEMCONTROL,1,ST7735_Portrait ); break;
+             // 	  case RLANDSCAPE:    spi_write_cd(ILI9341_MEMCONTROL,1,ST7735_Landscape180 ); break;
+             // 	  case RPORTRAIT:     spi_write_cd(ILI9341_MEMCONTROL,1,ST7735_Portrait180 ); break;
+             // }
+             // break;
+
+             switch(Option.DISPLAY_ORIENTATION) {
+                  case LANDSCAPE:     spi_write_cd(ST7735_MADCTL, 1, ST7735_Landscape | (Option.DISPLAY_TYPE==ST7735 ? 0 : 8)); break;
+                  case PORTRAIT:      spi_write_cd(ST7735_MADCTL, 1, ST7735_Portrait | (Option.DISPLAY_TYPE==ST7735 ? 0 : 8)); break;
+                  case RLANDSCAPE:    spi_write_cd(ST7735_MADCTL, 1, ST7735_Landscape180 | (Option.DISPLAY_TYPE==ST7735 ? 0 : 8)); break;
+                  case RPORTRAIT:     spi_write_cd(ST7735_MADCTL, 1, ST7735_Portrait180 | (Option.DISPLAY_TYPE==ST7735 ? 0 : 8)); break;
+             }
+             break;
+
 
 
          case ST7789:
@@ -541,7 +558,7 @@ void MIPS16 InitDisplaySPI(int fullinit) {
      }
 
 
-    if(Option.DISPLAY_TYPE!=ST7789 && Option.DISPLAY_TYPE!=ST7735 && Option.DISPLAY_TYPE!=ILI9481IPS ){
+    if(Option.DISPLAY_TYPE!=ST7789 && Option.DISPLAY_TYPE!=ST7735 && Option.DISPLAY_TYPE!=ST7735S && Option.DISPLAY_TYPE!=ILI9481IPS ){
         switch(Option.DISPLAY_ORIENTATION) {
           case LANDSCAPE:     spi_write_cd(ILI9341_MEMCONTROL,1,ILI9341_Landscape); break;     //28
           case PORTRAIT:      spi_write_cd(ILI9341_MEMCONTROL,1,ILI9341_Portrait); break;      //48
@@ -645,6 +662,22 @@ void DefineRegionSPI(int xstart, int ystart, int xend, int yend, int rw) {
               yend+=80;
         }
     }
+
+    if(Option.DISPLAY_TYPE==ST7735S){
+    	if(Option.DISPLAY_ORIENTATION & 1){
+    		ystart+=26;
+    		yend+=26;
+    		xstart++;
+    		xend++;
+    	} else {
+    		xstart+=26;
+    		xend+=26;
+    		ystart++;
+    		yend++;
+    	}
+    }
+
+
 
     if(Option.DISPLAY_TYPE == ILI9481 ){
     	if(rw) set_cs();
