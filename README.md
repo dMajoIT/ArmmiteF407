@@ -25,7 +25,7 @@ Initial release of V5.07.02
 
 
 *****************************************************************************   
-Armmite F407 MMBasic
+Armmite F407 MMBasic   
 MMBasic  for STM32F407VET6 (Armmite F4)
 
 Copyright 2011-2023 Geoff Graham and  Peter Mather.
