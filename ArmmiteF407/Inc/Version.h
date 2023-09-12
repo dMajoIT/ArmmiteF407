@@ -21,7 +21,7 @@ provisions:
 
 //#define DEBUGMODE
 
-#define VERSION         "5.07.02b2"
+#define VERSION         "5.07.02b1"
 #define MES_SIGNON  "ARMmite MMBasic Version " VERSION
 #define YEAR		"2011-2023"			    // and the year
 #define YEAR2          "2016-2023"
