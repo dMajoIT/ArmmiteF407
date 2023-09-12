@@ -7,6 +7,11 @@ Compiled version and documentation is available ........
 
 Change list from V5.07.00
 
+V5.07.02b2:  
+Added Multiline comments to editor
+Fixed potential issue with FILES command
+Closed SPI before saving Library incase it was open from a previous issue.
+
 V5.07.02b1:  
 Added ST7735S Display  
 Fixed 'Not Enough Memory' error when using EDIT command with OPTION LCDPANEL CONSOLE on with  non SSD1963 display.
