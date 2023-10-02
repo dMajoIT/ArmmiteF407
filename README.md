@@ -2,8 +2,9 @@ Files to build the Armmite F4 MMBasic running on the STM32F407VET6
 
 
 
-The code is developed under STM32CubeIDE on W10 using GCC x.x.x
+The code is developed under STM32CubeIDE on W10
 Compiled version and documentation is available ........
+
 
 Change list from V5.07.00
 
