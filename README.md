@@ -2,9 +2,9 @@ Files to build the Armmite F4 MMBasic running on the STM32F407VET6
 
 
 
-The STM32CubeIDE project is in subdirectory ArmmiteF407. This should be placed in your STM32CubeIDE workspace. e.g. workspace/ArmmiteF407 and opened and compiled using STM32CubeIDE.  
-A compiled binary version is under the the binaries subdirectory.  
-A user manual for MMBasic on the STM32F407 is under the docs subdirectory.  
+The STM32CubeIDE project is directory ArmmiteF407. This should be placed in your STM32CubeIDE workspace. e.g. workspace/ArmmiteF407 and opened and compiled using STM32CubeIDE.  
+A compiled binary version is under the the binaries directory.  
+A user manual for MMBasic on the STM32F407 is under the docs directory.  
 
 
 Change list from V5.07.00
