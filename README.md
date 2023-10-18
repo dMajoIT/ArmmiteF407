@@ -12,7 +12,9 @@ Change list from V5.07.00
 V5.07.02b2:  
 Added Multiline comments to editor.       
 Fixed potential issue with FILES command.       
-Closed SPI before saving Library incase it was open from a previous issue.        
+Closed SPI before saving Library incase it was open from a previous issue.   
+BACKLIGHT syntax updated to   
+BACKLIGHT percentage% [, DEFAULT|REVERSE]  
 
 V5.07.02b1:  
 Added ST7735S Display  
