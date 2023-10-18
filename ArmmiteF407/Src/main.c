@@ -1,5 +1,53 @@
+
+/*-*****************************************************************************
+
+MMBasic  for STM32F407VET6 (Armmite F4)
+
+main.c
+
+Copyright 2011-2023 Geoff Graham and  Peter Mather.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice,
+   this list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+3. Neither the name of the copyright holders nor the names of its contributors
+   may be used to endorse or promote products derived from this software
+   without specific prior written permission.
+
+4. The name MMBasic be used when referring to the interpreter in any
+   documentation and promotional material and the original copyright message
+  be displayed  on the console at startup (additional copyright messages may
+   be added).
+
+5. All advertising materials mentioning features or use of this software must
+   display the following acknowledgement: This product includes software
+   developed by Geoff Graham and Peter Mather.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+*******************************************************************************/
+
 /* USER CODE BEGIN Header */
 /**
+  * In addition the software components from STMicroelectronics are provided
+  * subject to the license as detailed below:
+  *
   ******************************************************************************
   * @file           : main.c
   * @brief          : Main program body
@@ -103,6 +151,7 @@ int MMCharPos;
 char LCDAttrib;
 volatile int MMAbort = false;
 int use_uart;
+
 unsigned int __attribute__((section(".my_section"))) _excep_dummy; // for some reason persistent does not work on the first variable
 unsigned int __attribute__((section(".my_section"))) _excep_code;  //  __attribute__ ((persistent));  // if there was an exception this is the exception code
 unsigned int __attribute__((section(".my_section"))) _excep_addr;  //  __attribute__ ((persistent));  // and this is the address
@@ -583,9 +632,7 @@ int main(void)
 
         ContinuePoint = nextstmt;                                   // in case the user wants to use the continue command
         *tknbuf = 0;                                                // we do not want to run whatever is in the token buffer
-#ifdef CMDHISTORY
          memset(inpbuf,0,STRINGSIZE);
-#endif
     } else {
           if(_excep_cause != CAUSE_MMSTARTUP) {
               ClearProgram();
@@ -594,6 +641,7 @@ int main(void)
 #if defined(TEST_CONFIG)
             CurrentLinePtr = inpbuf;
             strcpy(inpbuf, TEST_CONFIG);
+            multi=false;
             tokenise(true);
             ExecuteProgram(tknbuf);
             memset(inpbuf,0,STRINGSIZE);
@@ -675,28 +723,8 @@ int main(void)
             MMPrintString("> ");                                    // print the prompt
         }
         ErrorInPrompt = false;
-//#ifdef CMDHISTORY
         EditInputLine();          //Enter|Recall|Edit the command line. Save to command history
-//#else
-//        MMgetline(0, inpbuf);                                       // get the input
-//#endif
         if(!*inpbuf) continue;                                      // ignore an empty line
-#ifdef RUNSHORTCUTOLDVERSION
-        char *p=inpbuf;
-        skipspace(p);
-        if(*p=='*'){ //shortform RUN command so convert to a normal version
-       		  memmove(&p[4],&p[0],strlen(p)+1);
-       		  p[0]='R';p[1]='U';p[2]='N';p[3]='$';p[4]=34;
-       		  char  *q;
-       		  if((q=strchr(p,' ')) != 0){ //command line after the filename
-       			  *q=','; //chop the command at the first space character
-       			  memmove(&q[1],&q[0],strlen(q)+1);
-       			  q[0]=34;
-       		  } else strcat(p,"\"");
-       		  p[3]=' ';
-       //		  PRet();MMPrintString(inpbuf);PRet();
-       	  }
-#endif
         char *p=inpbuf;
         skipspace(p);
         executelocal(p);
@@ -704,6 +732,7 @@ int main(void)
             transform_star_command(inpbuf);
             p = inpbuf;
         }
+        multi=false;
         tokenise(true);                                             // turn into executable code
 autorun:
         i=0;
@@ -723,9 +752,7 @@ autorun:
             memset(inpbuf,0,STRINGSIZE);
        	    longjmp(mark, 1);												// jump back to the input prompt
         }
-//#ifdef CMDHISTORY
-//        memset(inpbuf,0,STRINGSIZE);
-//#endif
+
         /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -2284,7 +2311,7 @@ void stripcomment(char *p){
         q++;
     }
 }
-
+/*
 void testlocal(char *p, char *command, void (*func)()){
     int len=strlen(command);
     if((strncasecmp(p,command,len)==0) && (strlen(p)==len || p[len]==' ' || p[len]=='\'')){
@@ -2299,6 +2326,32 @@ void testlocal(char *p, char *command, void (*func)()){
     }
 
 }
+*/
+
+void testlocal(char *p, char *command, void (*func)()){
+    int len=strlen(command);
+    if((strncasecmp(p,command,len)==0) && (strlen(p)==len || p[len]==' ' || p[len]=='\'')){
+        p+=len;
+        skipspace(p);
+        cmdline=GetTempMemory(STRINGSIZE);
+        stripcomment(p);
+        strcpy(cmdline,p);
+        char *q=cmdline;
+        int toggle=0;
+        while(*q){
+            if(*q++ == '"') {
+            toggle ^=1;
+            }
+        }
+        if(toggle)cmdline[strlen(cmdline)]='"';
+        (*func)();
+        memset(inpbuf,0,STRINGSIZE);
+        longjmp(mark, 1);                                                                                                                                                                 // jump back to the input prompt
+    }
+}
+
+
+
 void executelocal(char *p){
     testlocal(p,"FILES",cmd_files);
    // testlocal(p,"UPDATE FIRMWARE",cmd_update);
@@ -2310,6 +2363,7 @@ void executelocal(char *p){
 void SaveProgramToFlash(char *pm, int msg) {
     char *p, endtoken, fontnbr, prevchar = 0, buf[STRINGSIZE];
     int nbr, i, n, SaveSizeAddr;
+    multi=false;
     uint32_t storedupdates[MAXCFUNCTION], updatecount=0, realflashsave;
 
     memcpy(buf, tknbuf, STRINGSIZE);                                // save the token buffer because we are going to use it
@@ -2614,7 +2668,6 @@ void Error_Handler(void)
   /* USER CODE END Error_Handler_Debug */
 }
 
-//#ifdef  CMDHISTORY
 // insert a string into the start of the lastcmd buffer.
 // the buffer is a sequence of strings separated by a zero byte.
 // using the up arrow usere can call up the last few commands executed.

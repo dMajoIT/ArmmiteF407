@@ -1,25 +1,49 @@
-/***********************************************************************************************************************
-MMBasic
+/*-*****************************************************************************
 
-MiscMX470.c
+ArmmiteF4 MMBasic
 
-Handles the a few miscellaneous functions for the MX470 version.
+MiscSTM32.c
 
-Copyright 2011 - 2019 Geoff Graham.  All Rights Reserved.
+Handles  a few miscellaneous functions for the STM32 versions.
 
-This file and modified versions of this file are supplied to specific individuals or organisations under the following
-provisions:
 
-- This file, or any files that comprise the MMBasic source (modified or not), may not be distributed or copied to any other
-  person or organisation without written permission.
+Copyright 2011-2023 Geoff Graham and  Peter Mather.
 
-- Object files (.o and .hex files) generated using this file (modified or not) may not be distributed or copied to any other
-  person or organisation without written permission.
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
 
-- This file is provided in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+1. Redistributions of source code must retain the above copyright notice,
+   this list of conditions and the following disclaimer.
 
-************************************************************************************************************************/
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+3. Neither the name of the copyright holders nor the names of its contributors
+   may be used to endorse or promote products derived from this software
+   without specific prior written permission.
+
+4. The name MMBasic be used when referring to the interpreter in any
+   documentation and promotional material and the original copyright message
+  be displayed  on the console at startup (additional copyright messages may
+   be added).
+
+5. All advertising materials mentioning features or use of this software must
+   display the following acknowledgement: This product includes software
+   developed by Geoff Graham and Peter Mather.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+*******************************************************************************/
 
 
 #include "MMBasic_Includes.h"
@@ -48,7 +72,7 @@ extern void setterminal(void);
 char *LCDList[] = {"","VGA","SSD1963_5ER_16", "SSD1963_7ER_16",  //0-3
 		"SSD1963_4_16", "SSD1963_5_16", "SSD1963_5A_16", "SSD1963_7_16", "SSD1963_7A_16", "SSD1963_8_16",  //4-9 SSD P16 displays
 		"USER",//10
-		"ST7735","ILI9431_I","","","ILI9481IPS","ILI9163", "GC9A01", "ST7789","ILI9488", "ILI9481", "ILI9341", "",      //11-22 SPI
+		"ST7735","ILI9431_I","ST7735S","","ILI9481IPS","ILI9163", "GC9A01", "ST7789","ILI9488", "ILI9481", "ILI9341", "",      //11-22 SPI
 		  "ILI9341_16", "ILI9486_16", "", "IPS_4_16", ""    //23-27 P16 displays
 		 };
 const char *OrientList[] = {"", "LANDSCAPE", "PORTRAIT", "RLANDSCAPE", "RPORTRAIT"};
@@ -166,11 +190,11 @@ void printoptions(void){
     }
    // if(Option.DefaultBrightness!=100){
     if(HRes != 0){
-    	MMPrintString("DEFAULT BACKLIGHT ");
+    	MMPrintString("BACKLIGHT ");
     	if(Option.DefaultBrightness>100){
-    		PInt(Option.DefaultBrightness-101);MMPrintString(",R \r\n");
+    		PInt(Option.DefaultBrightness-101);MMPrintString(",REVERSE \r\n");
     	}else{
-    		PInt(Option.DefaultBrightness);PRet();
+    		PInt(Option.DefaultBrightness);;MMPrintString(",DEFAULT \r\n");
     	}
     }
 

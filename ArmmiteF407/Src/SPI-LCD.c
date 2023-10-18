@@ -1,26 +1,50 @@
-/***********************************************************************************************************************
-MMBasic
+/*-*****************************************************************************
 
-LCDDriver.c
+ArmmiteF4 MMBasic
+
+SPI-LCD.c
 
 This is the driver for SPI LCDs in MMBasic.
-The core SPI LCD driver was written and developed by Peter Mather of the Back Shed Forum (http://www.thebackshed.com/forum/forum_topics.asp?FID=16)
+The core SPI LCD driver was written and developed by Peter Mather of
+the Back Shed Forum (http://www.thebackshed.com/forum/forum_topics.asp?FID=16)
 
-Copyright 2011 - 2019 Geoff Graham.  All Rights Reserved.
+Copyright 2011-2023 Geoff Graham and  Peter Mather.
 
-This file and modified versions of this file are supplied to specific individuals or organisations under the following
-provisions:
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
 
-- This file, or any files that comprise the MMBasic source (modified or not), may not be distributed or copied to any other
-  person or organisation without written permission.
+1. Redistributions of source code must retain the above copyright notice,
+   this list of conditions and the following disclaimer.
 
-- Object files (.o and .hex files) generated using this file (modified or not) may not be distributed or copied to any other
-  person or organisation without written permission.
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
 
-- This file is provided in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+3. Neither the name of the copyright holders nor the names of its contributors
+   may be used to endorse or promote products derived from this software
+   without specific prior written permission.
 
-************************************************************************************************************************/
+4. The name MMBasic be used when referring to the interpreter in any
+   documentation and promotional material and the original copyright message
+  be displayed  on the console at startup (additional copyright messages may
+   be added).
+
+5. All advertising materials mentioning features or use of this software must
+   display the following acknowledgement: This product includes software
+   developed by Geoff Graham and Peter Mather.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+*******************************************************************************/
 
 #include <stdarg.h>
 #include "MMBasic_Includes.h"
@@ -88,6 +112,8 @@ void MIPS16 ConfigDisplaySPI(char *p) {
     	DISPLAY_TYPE = ST7789;
     } else if(checkstring(argv[0], "ST7735")) {
     	DISPLAY_TYPE = ST7735;
+    } else if(checkstring(argv[0], "ST7735S")) {
+       	DISPLAY_TYPE = ST7735S;
     } else if(checkstring(argv[0], "GC9A01")) {
     	DISPLAY_TYPE = GC9A01;
 	} else
@@ -508,20 +534,35 @@ void MIPS16 InitDisplaySPI(int fullinit) {
 
 		       break;
 
-
+         case ST7735S:
          case ST7735:
         	  LCDAttrib=2;  //B0=ReadBuffer B1=RGB565
-              DisplayHRes = 160;
-              DisplayVRes = 128;
-              ResetController();
-              SendCommandBlock(ST7735Init);  //send the block of commands
-              switch(Option.DISPLAY_ORIENTATION) {
-              	  case LANDSCAPE:     spi_write_cd(ILI9341_MEMCONTROL,1,ST7735_Landscape ); break;
-              	  case PORTRAIT:      spi_write_cd(ILI9341_MEMCONTROL,1,ST7735_Portrait ); break;
-              	  case RLANDSCAPE:    spi_write_cd(ILI9341_MEMCONTROL,1,ST7735_Landscape180 ); break;
-              	  case RPORTRAIT:     spi_write_cd(ILI9341_MEMCONTROL,1,ST7735_Portrait180 ); break;
-              }
-              break;
+        	  DisplayHRes = 160;
+        	  ResetController();
+        	  SendCommandBlock(ST7735Init);  //send the block of commands
+        	  if (Option.DISPLAY_TYPE==ST7735){
+                 DisplayVRes = 128;
+        	  }else{
+        		DisplayVRes = 80;
+        		spi_write_cd(ST7735_INVON,1,0);
+        	  }
+
+             // switch(Option.DISPLAY_ORIENTATION) {
+             // 	  case LANDSCAPE:     spi_write_cd(ILI9341_MEMCONTROL,1,ST7735_Landscape ); break;
+             // 	  case PORTRAIT:      spi_write_cd(ILI9341_MEMCONTROL,1,ST7735_Portrait ); break;
+             // 	  case RLANDSCAPE:    spi_write_cd(ILI9341_MEMCONTROL,1,ST7735_Landscape180 ); break;
+             // 	  case RPORTRAIT:     spi_write_cd(ILI9341_MEMCONTROL,1,ST7735_Portrait180 ); break;
+             // }
+             // break;
+
+             switch(Option.DISPLAY_ORIENTATION) {
+                  case LANDSCAPE:     spi_write_cd(ST7735_MADCTL, 1, ST7735_Landscape | (Option.DISPLAY_TYPE==ST7735 ? 0 : 8)); break;
+                  case PORTRAIT:      spi_write_cd(ST7735_MADCTL, 1, ST7735_Portrait | (Option.DISPLAY_TYPE==ST7735 ? 0 : 8)); break;
+                  case RLANDSCAPE:    spi_write_cd(ST7735_MADCTL, 1, ST7735_Landscape180 | (Option.DISPLAY_TYPE==ST7735 ? 0 : 8)); break;
+                  case RPORTRAIT:     spi_write_cd(ST7735_MADCTL, 1, ST7735_Portrait180 | (Option.DISPLAY_TYPE==ST7735 ? 0 : 8)); break;
+             }
+             break;
+
 
 
          case ST7789:
@@ -541,7 +582,7 @@ void MIPS16 InitDisplaySPI(int fullinit) {
      }
 
 
-    if(Option.DISPLAY_TYPE!=ST7789 && Option.DISPLAY_TYPE!=ST7735 && Option.DISPLAY_TYPE!=ILI9481IPS ){
+    if(Option.DISPLAY_TYPE!=ST7789 && Option.DISPLAY_TYPE!=ST7735 && Option.DISPLAY_TYPE!=ST7735S && Option.DISPLAY_TYPE!=ILI9481IPS ){
         switch(Option.DISPLAY_ORIENTATION) {
           case LANDSCAPE:     spi_write_cd(ILI9341_MEMCONTROL,1,ILI9341_Landscape); break;     //28
           case PORTRAIT:      spi_write_cd(ILI9341_MEMCONTROL,1,ILI9341_Portrait); break;      //48
@@ -645,6 +686,22 @@ void DefineRegionSPI(int xstart, int ystart, int xend, int yend, int rw) {
               yend+=80;
         }
     }
+
+    if(Option.DISPLAY_TYPE==ST7735S){
+    	if(Option.DISPLAY_ORIENTATION & 1){
+    		ystart+=26;
+    		yend+=26;
+    		xstart++;
+    		xend++;
+    	} else {
+    		xstart+=26;
+    		xend+=26;
+    		ystart++;
+    		yend++;
+    	}
+    }
+
+
 
     if(Option.DISPLAY_TYPE == ILI9481 ){
     	if(rw) set_cs();

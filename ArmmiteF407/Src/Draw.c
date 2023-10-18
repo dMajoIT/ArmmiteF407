@@ -1,26 +1,49 @@
-/***********************************************************************************************************************
-MMBasic
+/*-*****************************************************************************
+
+ArmmiteF4 MMBasic
 
 Draw.c
 
 Does the basic LCD display commands and drawing in MMBasic.
 
-Copyright 2011 - 2019 Geoff Graham.  All Rights Reserved.
 
-This file and modified versions of this file are supplied to specific individuals or organisations under the following
-provisions:
+Copyright 2011-2023 Geoff Graham and  Peter Mather.
 
-- This file, or any files that comprise the MMBasic source (modified or not), may not be distributed or copied to any other
-  person or organisation without written permission.
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
 
-- Object files (.o and .hex files) generated using this file (modified or not) may not be distributed or copied to any other
-  person or organisation without written permission.
+1. Redistributions of source code must retain the above copyright notice,
+   this list of conditions and the following disclaimer.
 
-- This file is provided in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
 
-************************************************************************************************************************/
+3. Neither the name of the copyright holders nor the names of its contributors
+   may be used to endorse or promote products derived from this software
+   without specific prior written permission.
 
+4. The name MMBasic be used when referring to the interpreter in any
+   documentation and promotional material and the original copyright message
+  be displayed  on the console at startup (additional copyright messages may
+   be added).
+
+5. All advertising materials mentioning features or use of this software must
+   display the following acknowledgement: This product includes software
+   developed by Geoff Graham and Peter Mather.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+*******************************************************************************/
 
 #include <float.h>
 
@@ -256,17 +279,18 @@ void cmd_guiMX170(void) {
 
     error("Unknown command");
 }
-char *blitmemory;
+/* This used by the BLIT commands. It uses temporary memory*/
+char *blitmemoryCmd;
 #define blitmemorysize 2560+RAMPAGESIZE
-void DoBlit(int x1, int y1, int x2, int y2, int w, int h){
+void DoBlitCmd(int x1, int y1, int x2, int y2, int w, int h){
     int max_x;
     char *buff;
     int multiplier=3;
-    blitmemory=GetTempMemory(blitmemorysize);
+    blitmemoryCmd=GetTempMemory(blitmemorysize);
     if((w*h*multiplier)>blitmemorysize-RAMPAGESIZE){ //need to use alternative copy
         if(x1 >=x2) {
             max_x=(blitmemorysize-RAMPAGESIZE)/h/multiplier;
-            buff=blitmemory;
+            buff=blitmemoryCmd;
             while(w > max_x){
                 ReadBuffer(x1,y1,x1+max_x-1,y1+h-1,buff);
                 DrawBuffer(x2,y2,x2+max_x-1,y2+h-1,buff);
@@ -281,6 +305,57 @@ void DoBlit(int x1, int y1, int x2, int y2, int w, int h){
         } else {
             int start_x1,start_x2;
             max_x=(blitmemorysize-RAMPAGESIZE)/h/multiplier;
+            buff=blitmemoryCmd;
+            start_x1=x1+w-max_x;
+            start_x2=x2+w-max_x;
+            while(w > max_x){
+                ReadBuffer(start_x1,y1,start_x1+max_x-1,y1+h-1,buff);
+                DrawBuffer(start_x2,y2,start_x2+max_x-1,y2+h-1,buff);
+                w-=max_x;
+                start_x1-=max_x;
+                start_x2-=max_x;
+            }
+            ReadBuffer(x1,y1,x1+w-1,y1+h-1,buff);
+            DrawBuffer(x2,y2,x2+w-1,y2+h-1,buff);
+            FreeMemory(buff);
+            return;
+        }
+    } else {
+        buff=blitmemoryCmd;
+        ReadBuffer(x1,y1,x1+w-1,y1+h-1,buff);
+        DrawBuffer(x2,y2,x2+w-1,y2+h-1,buff);
+        FreeMemory(buff);
+    }
+}
+
+/* This used when OPTION LCDPANEL CONSOLE is set and scrolling LCDPanels that don't
+ * support hardware scrolling. Its 1K buffer is allocated in CCRAM so that it still
+ * has memory when the Edit command uses all available temporary ram for editting.
+*/
+char blitmemory[1024*1];
+void DoBlit(int x1, int y1, int x2, int y2, int w, int h){
+    int max_x;
+    char *buff;
+    int multiplier=3;
+    int memory=sizeof(blitmemory);
+    if((w*h*multiplier)>memory-RAMPAGESIZE){ //need to use alternative copy
+        if(x1 >=x2) {
+            max_x=(memory-RAMPAGESIZE)/h/multiplier;
+            buff=blitmemory;
+            while(w > max_x){
+                ReadBuffer(x1,y1,x1+max_x-1,y1+h-1,buff);
+                DrawBuffer(x2,y2,x2+max_x-1,y2+h-1,buff);
+                x1+=max_x;
+                x2+=max_x;
+                w-=max_x;
+            }
+            ReadBuffer(x1,y1,x1+w-1,y1+h-1,buff);
+            DrawBuffer(x2,y2,x2+w-1,y2+h-1,buff);
+            FreeMemory(buff);
+            return;
+        } else {
+            int start_x1,start_x2;
+            max_x=(memory-RAMPAGESIZE)/h/multiplier;
             buff=blitmemory;
             start_x1=x1+w-max_x;
             start_x2=x2+w-max_x;
@@ -303,6 +378,7 @@ void DoBlit(int x1, int y1, int x2, int y2, int w, int h){
         FreeMemory(buff);
     }
 }
+//BLIT WRITE [#]b, x, y [,mode] now in picomite passing w,h not used in H7 and picomites.
 void cmd_blit(void){
     int x1, y1, x2, y2, w, h, bnbr;
     char *p;
@@ -372,7 +448,7 @@ void cmd_blit(void){
     	 if(y1 + h > VRes) h = VRes - y1;
     	 if(y2 + h > VRes) h = VRes - y2;
     	 if(w < 1 || h < 1 || x1 < 0 || x1 + w > HRes || x2 < 0 || x2 + w > HRes || y1 < 0 || y1 + h > VRes || y2 < 0 || y2 + h > VRes) return;
-    	 DoBlit( x1, y1, x2, y2, w, h);
+    	 DoBlitCmd( x1, y1, x2, y2, w, h);
      }
 }
 

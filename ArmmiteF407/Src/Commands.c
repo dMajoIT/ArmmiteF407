@@ -1,26 +1,48 @@
-/***********************************************************************************************************************
-MMBasic
+/*-*****************************************************************************
+
+ArmmiteF4 MMBasic
 
 commands.c
 
 Handles all the commands in MMBasic
 
-Copyright 2011 - 2020 Geoff Graham.  All Rights Reserved.
+Copyright 2011-2023 Geoff Graham and  Peter Mather.
 
-This file and modified versions of this file are supplied to specific individuals or organisations under the following
-provisions:
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
 
-- This file, or any files that comprise the MMBasic source (modified or not), may not be distributed or copied to any other
-  person or organisation without written permission.
+1. Redistributions of source code must retain the above copyright notice,
+   this list of conditions and the following disclaimer.
 
-- Object files (.o and .hex files) generated using this file (modified or not) may not be distributed or copied to any other
-  person or organisation without written permission.
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
 
-- This file is provided in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+3. Neither the name of the copyright holders nor the names of its contributors
+   may be used to endorse or promote products derived from this software
+   without specific prior written permission.
 
-************************************************************************************************************************/
+4. The name MMBasic be used when referring to the interpreter in any
+   documentation and promotional material and the original copyright message
+  be displayed  on the console at startup (additional copyright messages may
+   be added).
 
+5. All advertising materials mentioning features or use of this software must
+   display the following acknowledgement: This product includes software
+   developed by Geoff Graham and Peter Mather.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+*******************************************************************************/
 #include "MMBasic_Includes.h"
 
 #if defined(__PIC32MX__)
@@ -333,6 +355,8 @@ void MIPS16 cmd_list(void) {
     			else if(m==CommandTableSize+5)strcpy(c[m],"New");
     			else if(m==CommandTableSize+6)strcpy(c[m],"Autosave");
     			else if(m==CommandTableSize+7)strcpy(c[m],"Files");
+				//else if(m==CommandTableSize+8)strcpy(c[m],"/*");
+				//else if(m==CommandTableSize+9)strcpy(c[m],"*/");
     			else strcpy(c[m],"Cat");
     			m++;
 		}
@@ -352,7 +376,7 @@ void MIPS16 cmd_list(void) {
 		}
 
     } else if((p = checkstring(cmdline, "FUNCTIONS"))) {
-    	m=0;x=3;
+    	m=0;x=5;
     	step=(Option.DISPLAY_CONSOLE ? HRes/gui_font_width/16 : 5);
 		char** c=GetTempMemory((TokenTableSize+x)*sizeof(*c)+(TokenTableSize+x)*16);
 		for(i=0;i<TokenTableSize+x;i++){
@@ -360,6 +384,8 @@ void MIPS16 cmd_list(void) {
 				if(m<TokenTableSize)strcpy(c[m],tokentbl[i].name);
 				else if(m==TokenTableSize)strcpy(c[m],"=>");
 				else if(m==TokenTableSize+1)strcpy(c[m],"=<");
+				else if(m==TokenTableSize+2)strcpy(c[m],"MM.Fontheight");
+				else if(m==TokenTableSize+3)strcpy(c[m],"MM.Fontwidth");
 				else strcpy(c[m],"MM.Info$(");
 				m++;
 		}
@@ -458,7 +484,8 @@ void MIPS16 cmd_run(void) {
     ClearRuntime();
     WatchdogSet = false;
 	PrepareProgram(true);
-    // Create a global constant MM.CMDLINE$ containing 'cmd_args'.
+
+	// Create a global constant MM.CMDLINE$ containing 'cmd_args'.
     void *ptr = findvar("MM.CMDLINE$", V_FIND | V_DIM_VAR | T_CONST);
     CtoM(pcmd_args);
     memcpy(ptr, pcmd_args, *pcmd_args + 1); // *** THW 16/4/23
@@ -495,6 +522,7 @@ void MIPS16 cmd_new(void) {
 	checkend(cmdline);
     ClearSavedVars();                                               // clear any saved variables
     FlashWriteInit(PROGRAM_FLASH);                     // erase program memory
+    SPIClose();
     AppendLibrary(false);
 	ClearProgram();
     WatchdogSet = false;
@@ -1310,6 +1338,9 @@ void cmd_subfun(void) {
 	if(cmdtoken == cmdSUB) {
 	    returntoken = cmdENDSUB;
 	    errtoken = cmdENDFUNCTION;
+	} else if(cmdtoken == cmdComment) {
+	    returntoken = cmdEndComment;
+	    errtoken = cmdENDFUNCTION;
 	} else {
 	    returntoken = cmdENDFUNCTION;
 	    errtoken = cmdENDSUB;
@@ -1317,7 +1348,8 @@ void cmd_subfun(void) {
 	p = nextstmt;
 	while(1) {
         p = GetNextCommand(p, NULL, "No matching END declaration");
-        if(*p == cmdSUB || *p == cmdFUN || *p == errtoken) error("No matching END declaration");
+       // if(*p == cmdSUB || *p == cmdFUN  || *p == errtoken) error("No matching END declaration");
+        if(*p == cmdSUB || *p == cmdFUN || *p == cmdComment || *p == errtoken) error("No matching END declaration");
 		if(*p == returntoken) {                                     // found the next return
     		skipelement(p);
     		nextstmt = p;                                           // point to the next command
@@ -1457,6 +1489,15 @@ void MIPS16 cmd_read(void) {
     // setup for a search through the whole memory
     vidx = 0;
     datatoken = GetCommandValue("Data");
+    //If there has been no RESTORE then default the search to the current Program Area i.e.Main or Library
+   // if (NextDataLine==0){
+   //    NextData=0;
+   //    if(CurrentLinePtr >= ProgMemory + Option.ProgFlashSize){
+   // 	 NextDataLine = ProgMemory + Option.ProgFlashSize;
+   //    }else{
+   // 	 NextDataLine = ProgMemory;
+   //    }
+   //  }
     p = lineptr = NextDataLine;
     if(*p == 0xff) error("No DATA to read");                        // error if there is no program
 
@@ -1592,6 +1633,8 @@ search_again:
             NextData += 2;
         }
     }
+   // NextDataLine = 0;
+
 }
 
 void cmd_call(void){    //updated with fix from picomite 5.07.08b3
@@ -2159,6 +2202,7 @@ void execute(char* mycmd) {
 			}
 			i++;
 		}
+		multi=false;
 		tokenise(true);                                                 // and tokenise it (the result is in tknbuf)
 		memset(inpbuf, 0, STRINGSIZE);
 		tknbuf[strlen((char *)tknbuf)] = 0;

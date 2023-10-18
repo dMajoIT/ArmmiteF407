@@ -1,25 +1,48 @@
-/***********************************************************************************************************************
-MMBasic
+/*-*****************************************************************************
+
+ArmmiteF4 MMBasic
 
 Editor.c
 
 Implements the full screen editor.
 
-Copyright 2011 - 2019 Geoff Graham.  All Rights Reserved.
+Copyright 2011-2023 Geoff Graham and  Peter Mather.
 
-This file and modified versions of this file are supplied to specific individuals or organisations under the following
-provisions:
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
 
-- This file, or any files that comprise the MMBasic source (modified or not), may not be distributed or copied to any other
-  person or organisation without written permission.
+1. Redistributions of source code must retain the above copyright notice,
+   this list of conditions and the following disclaimer.
 
-- Object files (.o and .hex files) generated using this file (modified or not) may not be distributed or copied to any other
-  person or organisation without written permission.
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
 
-- This file is provided in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+3. Neither the name of the copyright holders nor the names of its contributors
+   may be used to endorse or promote products derived from this software
+   without specific prior written permission.
 
-************************************************************************************************************************/
+4. The name MMBasic be used when referring to the interpreter in any
+   documentation and promotional material and the original copyright message
+  be displayed  on the console at startup (additional copyright messages may
+   be added).
+
+5. All advertising materials mentioning features or use of this software must
+   display the following acknowledgement: This product includes software
+   developed by Geoff Graham and Peter Mather.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+*******************************************************************************/
 
 #include <stdio.h>
 
@@ -51,7 +74,8 @@ provisions:
 //      Attribute               VT100 Code      VT 100 Colour       LCD Screen Colour
 //======================================================================================
 #define VT100_C_NORMAL          "\033[97m"      // White            Foreground Colour
-#define VT100_C_COMMENT         "\033[38;2;192;192;0m"      // Yellow               Yellow
+//#define VT100_C_COMMENT         "\033[38;2;192;192;0m"      // Yellow               Yellow
+#define VT100_C_COMMENT         "\033[33m"      // Yellow               Yellow   Needs to be simple sequence for multiline comments.
 #define VT100_C_KEYWORD         "\033[36m"      // Cyan                 Cyan
 #define VT100_C_QUOTE           "\033[32m"      // Green                Green
 #define VT100_C_NUMBER          "\033[38;2;255;128;128m"      // Red                  Red
@@ -141,11 +165,13 @@ int TextChanged;                    // true if the program has been modified and
 #define MARK	2
 
 void FullScreenEditor(void);
-char *findLine(int ln);
+//char *findLine(int ln);
+char *findLine(int ln, int *inmulti);
 void printLine(int ln);
 void printScreen(void);
 void SCursor(int x, int y);
-int editInsertChar(char c);
+//int editInsertChar(char c);
+int editInsertChar( char c, char *multi);
 void PrintFunctKeys(int);
 void PrintStatus(void);
 void SaveToProgMemory(void);
@@ -237,6 +263,7 @@ void FullScreenEditor(void) {
 	int c, i;
 	char buf[STRINGSIZE + 2], clipboard[STRINGSIZE];
 	char *p, *tp, BreakKeySave;
+	static char currdel=0, nextdel=0, lastdel=0, multi=false;
 	char lastkey = 0;
 	int y, statuscount;
 
@@ -282,7 +309,8 @@ void FullScreenEditor(void) {
 									buf[i + 1] = 0;									// make sure that the end of the buffer is zeroed
 								while(i) buf[i--] = ' ';							// now, place our spaces in the typeahead buffer
 							}
-							if(!editInsertChar('\n')) break;						// insert the newline
+							//if(!editInsertChar('\n')) break;						// insert the newline
+							if(!editInsertChar('\n',&multi)) break;                 // insert the newline
 							TextChanged = true;
 							nbrlines++;
                             if(!(cury < VHeight - 1))                               // if we are NOT at the bottom
@@ -395,6 +423,13 @@ void FullScreenEditor(void) {
 				case DEL:	if(*txtp == 0) break;
 							p = txtp;
 							c = *p;
+	                          currdel=*p;
+	                          if(p!=EdBuff+EDIT_BUFFER_SIZE-1)nextdel=p[1];
+	                          else nextdel=0;
+	                          if(p!=EdBuff){
+	                          lastdel=*(--p);
+	                          p++;
+	                          } else lastdel=0;
 							while(*p) {
 								p[0] = p[1];
 								p++;
@@ -407,6 +442,10 @@ void FullScreenEditor(void) {
 								printLine(edy + cury);
 							TextChanged = true;
 							PositionCursor(txtp);
+	                        if(currdel=='/' && nextdel=='*' && Option.ColourCode)printScreen();
+	                        if(currdel=='*' && nextdel=='/' && Option.ColourCode)printScreen();
+	                        if(currdel=='/' && lastdel=='*' && Option.ColourCode)printScreen();
+	                        if(currdel=='*' && lastdel=='/' && Option.ColourCode)printScreen();
 							break;
 
                 case CTRLKEY('N'):
@@ -544,11 +583,12 @@ void FullScreenEditor(void) {
 				case F2:		     // Save, exit and run
                             MMPrintString("\033[?1000l");                         // Tera Term turn off mouse click report in vt200 mode
                             MMPrintString("\0338\033[2J\033[H");                         // vt100 clear screen and home cursor
-
-                                gui_fcolour = PromptFC;
-                                gui_bcolour = PromptBC;
-                                MX470Display(DISPLAY_CLS);                          // clear screen on the MX470 display only
-                                MX470Cursor(0, 0);                                  // home the cursor
+                             gui_fcolour = GUI_C_NORMAL;
+                             MMPrintString(VT100_C_NORMAL);
+                            gui_fcolour = PromptFC;
+                            gui_bcolour = PromptBC;
+                            MX470Display(DISPLAY_CLS);                          // clear screen on the MX470 display only
+                            MX470Cursor(0, 0);                                  // home the cursor
 
                             BreakKey = BreakKeySave;
                             if(buf[0] != ESC && TextChanged) SaveToProgMemory();
@@ -617,7 +657,11 @@ void FullScreenEditor(void) {
 							break;
 
 				// F6 to F12 - Normal function keys
+				//case CTRLKEY('B'):
 				case F6:
+                    printScreen();
+                    break;
+
 				case F7:
 				case F8:
 				case F9:
@@ -635,13 +679,16 @@ void FullScreenEditor(void) {
 							}
 							TextChanged = true;
 							if(insert || *txtp == '\n' || *txtp == 0) {
-								if(!editInsertChar(c)) break;						// insert it
+								//if(!editInsertChar(c)) break;						// insert it
+								if(!editInsertChar(c, &multi)) break;               // insert it
 							} else
 								*txtp++ = c;										// or just overtype
                                 printLine(edy + cury);                              // redraw the whole line so that colour coding will occur
 							PositionCursor(txtp);
 							// SCursor(x, cury);
 							tempx = cury;											// used to track the preferred cursor position
+	                        if(multi && Option.ColourCode)printScreen();
+	//                          lastchar=c;
 							break;
 
 			}
@@ -865,11 +912,22 @@ void MarkMode(char *cb, char *buf) {
 // search through the text in the editing buffer looking for a specific line
 // enters with ln = the line required
 // exits pointing to the start of the line or pointing to a zero char if not that many lines in the buffer
-char *findLine(int ln) {
-	char *p;
-	p = EdBuff;
+char *findLine(int ln, int *inmulti) {
+    char *p, *q;
+    *inmulti=false;
+    p = q = EdBuff;
+    skipspace(q);
+    if(q[0]=='/' && q[1]=='*') *inmulti=true;
+    if(q[0]=='*' && q[1]=='/') *inmulti=false;
 	while(ln && *p) {
-		if(*p == '\n') ln--;
+		if(*p == '\n') {
+		    if(*inmulti==2)*inmulti=false;
+		    ln--;
+		    q=&p[1];
+		    skipspace(q);
+		    if(q[0]=='/' && q[1]=='*') *inmulti=true;
+		    if(q[0]=='*' && q[1]=='/') *inmulti=2;
+		}
 		p++;
 	}
 	return p;
@@ -899,6 +957,7 @@ void SetColour(char *p, int DoVT100) {
     char **pp;
     static int intext = false;
     static int incomment = false;
+    static int multilinecomment = false;
     static int inkeyword = false;
     static char *twokeyword = NULL;
     static int inquote = false;
@@ -929,8 +988,20 @@ void SetColour(char *p, int DoVT100) {
     if(p == NULL) {
         innumber = inquote = inkeyword = incomment = intext = false;
         twokeyword = NULL;
-        gui_fcolour = GUI_C_NORMAL;
-        if(DoVT100) MMPrintString(VT100_C_NORMAL);
+        if(!multilinecomment){
+            gui_fcolour = GUI_C_NORMAL;
+            if(DoVT100) MMPrintString(VT100_C_NORMAL);
+        }
+        return;
+    }
+
+    if(*p == '*' && p[1]=='/' && !inquote) {
+        multilinecomment = 2;
+        return;
+    }
+
+    if(*p == '/' && !inquote && multilinecomment==2) {
+        multilinecomment = false;
         return;
     }
 
@@ -942,8 +1013,15 @@ void SetColour(char *p, int DoVT100) {
         return;
     }
 
+    if(*p == '/' && p[1]=='*' && !inquote) {
+        gui_fcolour = GUI_C_COMMENT;
+        if(DoVT100) MMPrintString(VT100_C_COMMENT);
+        multilinecomment = true;
+        return;
+    }
+
     // once in a comment all following chars must be comments also
-    if(incomment) return;
+    if(incomment || multilinecomment) return;
 
     // check for a quoted string
     if(*p == '\"') {
@@ -1071,15 +1149,16 @@ void SetColour(char *p, int DoVT100) {
 void printLine(int ln) {
 	char *p;
 	int i;
-
+	int inmulti=false;
 
     // we always colour code the output to the LCD panel on the MX470 (when used as the console)
     if(Option.DISPLAY_CONSOLE) {
         MX470PutC('\r');                                            // print on the MX470 display
-        p = findLine(ln);
+        p = findLine(ln, &inmulti);
         i = VWidth - 1;
         while(i && *p && *p != '\n') {
-            SetColour(p, false);                                    // set the colour for the LCD display only
+            if(!inmulti)SetColour(p, false);                       // set the colour for the LCD display only
+            else gui_fcolour = GUI_C_COMMENT;
             MX470PutC(*p++);                                        // print on the MX470 display
             i--;
         }
@@ -1088,7 +1167,7 @@ void printLine(int ln) {
     SetColour(NULL, false);
 
     
-	p = findLine(ln);
+    p = findLine(ln, &inmulti);
     if(Option.ColourCode) {
         // if we are colour coding we need to redraw the whole line
 		MMputchar('\r');                                            // display the chars after the editing point
@@ -1101,7 +1180,13 @@ void printLine(int ln) {
     }
 
 	while(i && *p && *p != '\n') {
-        if(Option.ColourCode) SetColour(p, true);                   // if colour coding is used set the colour for the VT100 emulator
+	     if(Option.ColourCode) {
+	          if(!inmulti)SetColour(p, true);                   // if colour coding is used set the colour for the VT100 emulator
+	          else {
+	              gui_fcolour = GUI_C_COMMENT;
+	              MMPrintString(VT100_C_COMMENT);
+	          }
+	        }
 		MMputchar(*p++);                                            // display the chars after the editing point
 		i--;
 	}
@@ -1122,7 +1207,7 @@ void printScreen(void) {
 	for(i = 0; i <VHeight; i++) {
 		printLine(i + edy);
         PRet();
-        MX470PutS("\r\n", gui_fcolour, gui_bcolour);
+        //MX470PutS("\r\n", gui_fcolour, gui_bcolour);   //Fix for double spacing in edit mode.   Gerry 27/08/2023
 		curx = 0;
 		cury = i + 1;
 	}
@@ -1146,7 +1231,7 @@ void SCursor(int x, int y) {
 
 // move the text down by one char starting at the current position in the text
 // and insert a character
-int editInsertChar(char c) {
+int editInsertChar( char c, char *multi) {
 	char *p;
 
 	for(p = EdBuff; *p; p++);										// find the end of the text in memory
@@ -1155,6 +1240,11 @@ int editInsertChar(char c) {
 		return false;
 	}
 	for(; p >= txtp; p--) *(p + 1) = *p;							// shift everything down
+    *multi=0;
+    p=txtp-1;
+    if((c=='/' && *p=='*') || (c=='*' && *p=='/') )*multi=1;
+    p+=2;
+    if((c=='/' && *p=='*') || (c=='*' && *p=='/') )*multi=1;
 	*txtp++ = c;													// and insert our char
 	return true;
 }

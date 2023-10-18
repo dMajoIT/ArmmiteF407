@@ -1,23 +1,46 @@
-/***********************************************************************************************************************
-MMBasic
+/*-*****************************************************************************
+
+ArmmiteF4 MMBasic
 
 MATHS.c
 
-Copyright 2016 - 2021 Peter Mather.  All Rights Reserved.
+Copyright 2011-2023 Geoff Graham and  Peter Mather.
 
-This file and modified versions of this file are supplied to specific individuals or organisations under the following
-provisions:
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
 
-- This file, or any files that comprise the MMBasic source (modified or not), may not be distributed or copied to any other
-  person or organisation without written permission.
+1. Redistributions of source code must retain the above copyright notice,
+   this list of conditions and the following disclaimer.
 
-- Object files (.o and .hex files) generated using this file (modified or not) may not be distributed or copied to any other
-  person or organisation without written permission.
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
 
-- This file is provided in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+3. Neither the name of the copyright holders nor the names of its contributors
+   may be used to endorse or promote products derived from this software
+   without specific prior written permission.
 
-************************************************************************************************************************/
+4. The name MMBasic be used when referring to the interpreter in any
+   documentation and promotional material and the original copyright message
+  be displayed  on the console at startup (additional copyright messages may
+   be added).
+
+5. All advertising materials mentioning features or use of this software must
+   display the following acknowledgement: This product includes software
+   developed by Geoff Graham and Peter Mather.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+*******************************************************************************/
 #include "MMBasic_Includes.h"
 #include "Hardware_Includes.h"
 #include <math.h>
@@ -407,6 +430,76 @@ void cmd_math(void){
 			}
 			return;
 		}
+/*
+		tp = checkstring(cmdline, "WINDOW");
+		if(tp) {
+		       void *ptr1 = NULL;
+		       void *ptr2 = NULL;
+		       int i,j,card1=1, card2=1;
+		       MMFLOAT *a1float=NULL,*a2float=NULL, outmin,outmax, inmin=1.5e+308 , inmax=-1.5e308;
+		       int64_t *a1int=NULL, *a2int=NULL;
+		       getargs(&tp, 7,",");
+		       if(!(argc == 7)) error("Argument count");
+		       ptr1 = findvar(argv[0], V_FIND | V_EMPTY_OK | V_NOFIND_ERR);
+		       if(vartbl[VarIndex].type & T_NBR) {
+		          card1=1;
+		          for(i=0;i<MAXDIM;i++){
+		            j=(vartbl[VarIndex].dims[i] - OptionBase+1);
+	                if(j)card1 *= j;
+                  }
+                  a1float = (MMFLOAT *)ptr1;
+		          if((uint32_t)ptr1!=(uint32_t)vartbl[VarIndex].val.s)error("Syntax");
+		       } else if(vartbl[VarIndex].type & T_INT) {
+		           card1=1;
+	               for(i=0;i<MAXDIM;i++){
+	                j=(vartbl[VarIndex].dims[i] - OptionBase+1);
+	                if(j)card1 *= j;
+	               }
+	               a1int = (int64_t *)ptr1;
+		           if((uint32_t)ptr1!=(uint32_t)vartbl[VarIndex].val.s)error("Syntax");
+		       } else error("Argument 1 must be numerical");
+		        outmin=getnumber(argv[2]);
+		        outmax=getnumber(argv[4]);
+		        ptr2 = findvar(argv[6], V_FIND | V_EMPTY_OK | V_NOFIND_ERR);
+	            if(vartbl[VarIndex].type & T_NBR) {
+		           card2=1;
+		           for(i=0;i<MAXDIM;i++){
+		             j=(vartbl[VarIndex].dims[i] - OptionBase+1);
+	                 if(j)card2 *= j;
+	               }
+	               a2float = (MMFLOAT *)ptr2;
+		           if((uint32_t)a2float!=(uint32_t)vartbl[VarIndex].val.s)error("Syntax");
+		        } else if(vartbl[VarIndex].type & T_INT) {
+	               card2=1;
+	               for(i=0;i<MAXDIM;i++){
+		             j=(vartbl[VarIndex].dims[i] - OptionBase+1);
+		             if(j)card2 *= j;
+		           }
+		           a2int = (int64_t *)ptr2;
+		           if((uint32_t)a2int!=(uint32_t)vartbl[VarIndex].val.s)error("Syntax");
+		        } else error("Argument 4 must be numerical");
+		        if(card1 != card2)error("Size mismatch");
+		        if(a1float!=NULL){ //find min and max if in is a float
+		           for(i=0; i< card1;i++){
+		             if(a1float[i]<inmin)inmin=a1float[i];
+		             if(a1float[i]>inmax)inmax=a1float[i];
+		           }
+		        } else { //find min and max if in is an integer
+		            if(a1int[i]<inmin)inmin=(MMFLOAT)a1int[i];
+		            if(a1int[i]>inmax)inmax=(MMFLOAT)a1int[i];
+		        }
+		        if(a2float!=NULL && a1float!=NULL){ //in and out are floats
+		             for(i=0; i< card1;i++)a2float[i] = ((a1float[i]-inmin)/(inmax-inmin))*(outmax-outmin)+outmin;
+		        } else if(a2float!=NULL && a1float==NULL){ //in is a float and out is an integer
+		             for(i=0; i< card1;i++)a2int[i] =(long long int)(((a1float[i]-inmin)/(inmax-inmin))*(outmax-outmin)+outmin);
+		        } else if(a2float==NULL && a1float!=NULL){ //in is an integer and out is a float
+		             for(i=0; i< card1;i++)a2float[i] =((((MMFLOAT)a1int[i]-inmin)/(inmax-inmin))*(outmax-outmin)+outmin);
+		        } else {  // in and out are integers
+		            for(i=0; i< card1;i++)a2int[i] =(long long int)((((MMFLOAT)a1int[i]-inmin)/(inmax-inmin))*(outmax-outmin)+outmin);
+		        }
+		        return;
+		 }
+*/
 
 		tp = checkstring(cmdline, "SLICE");
 		if(tp) {
