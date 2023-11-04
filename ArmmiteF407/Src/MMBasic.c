@@ -1556,6 +1556,7 @@ char __attribute__ ((optimize("-O3"))) *getvalue(char *p, MMFLOAT *fa, long long
                             i+=(*p++)-48;
                             i*=10;
                             i+=(*p++)-48;
+                            if(i==0)error("Null character \\000 in escape sequence - use CHR$(0)","$");
                             *p1++=i;
                         } else {
                             p++;
@@ -1608,6 +1609,7 @@ char __attribute__ ((optimize("-O3"))) *getvalue(char *p, MMFLOAT *fa, long long
                                         p++;
                                         i = (i << 4) | ((toupper(*p) >= 'A') ? toupper(*p) - 'A' + 10 : *p - '0');
                                         p++;
+                                        if(i==0)error("Null character \\&00 in escape sequence - use CHR$(0)","$");
                                         *p1++=i;
                                     } else *p1++='x';
                                     break;
@@ -3163,6 +3165,7 @@ void MIPS16 ClearRuntime(void) {
     ClearStack();
     OptionExplicit = false;
     OptionEscape = false;
+    optionangle=1.0;
     DefaultType = T_NBR;
     ds18b20Timers = NULL;                                           // InitHeap() will recover the memory allocated to this array
     CloseAllFiles();

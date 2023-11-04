@@ -1421,11 +1421,13 @@ void cmd_option(void) {
         OptionExplicit = true;
         return;
     }
-	tp = checkstring(cmdline, "ANGLE");
+
+    tp = checkstring(cmdline, "ANGLE");
 	if(tp) {
 		if(checkstring(tp, "DEGREES"))	{ optionangle=RADCONV; return; }
 		if(checkstring(tp, "RADIANS"))	{ optionangle=1.0; return; }
 	}
+
 
     tp = checkstring(cmdline, "DEFAULT");
     if(tp) {
@@ -1594,6 +1596,7 @@ void fun_info(void){
     			if(OptionExplicit == false)strcpy(sret,"Off");
     			else strcpy(sret,"On");
 
+
     		}else if(checkstring(tp, "DEFAULT")){
     			if(DefaultType == T_INT)strcpy(sret,"Integer");
     			else if(DefaultType == T_NBR)strcpy(sret,"Float");
@@ -1632,14 +1635,14 @@ void fun_info(void){
         }
 
 
-    // tp=checkstring(ep, "NBRPINS");
-    // if(tp){
+    tp=checkstring(ep, "NBRPINS");
+    if(tp){
     //	if(HAS_64PINS)iret=64;
-    //	if(HAS_100PINS)iret=100;
+    	if(HAS_100PINS)iret=100;
     //	if(HAS_144PINS)iret=144;
-    //	targ=T_INT;
-    //	return;
-     // }
+    	targ=T_INT;
+    	return;
+    }
 
      tp=checkstring(ep, "PIN");
       if(tp){

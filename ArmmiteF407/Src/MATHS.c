@@ -1510,7 +1510,8 @@ void fun_math(void){
 			x=getnumber(argv[2]);
 			z=atan2(y,x);
 			if (z < 0.0) z = z + 2.0 * PI_VALUE;
-			fret=z;
+			//fret=z;
+			fret=z*optionangle;
 			targ = T_NBR;
 			return;
 		}

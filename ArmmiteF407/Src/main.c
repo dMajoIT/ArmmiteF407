@@ -1,7 +1,8 @@
 
 /*-*****************************************************************************
 
-MMBasic  for STM32F407VET6 (Armmite F4)
+MMBasic  for STM32F407xGT6 (Armmite F4)
+Supports STM32F405RGT6,STM32F407VGT6,STM32F407ZGT6
 
 main.c
 
