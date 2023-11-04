@@ -15,6 +15,7 @@ Fixed potential issue with FILES command.
 Closed SPI before saving Library incase it was open from a previous issue.   
 BACKLIGHT syntax updated to   
 BACKLIGHT percentage% [, DEFAULT|REVERSE] 
+Using \\000 and \&00 (with OPTION ESCAPE) now gives error message to use CHR$(0) as per picomites  
 Fix for OPTION ANGLE not defaulting to RADIANS on new RUN command.  
 Fix for OPTION ANGLE not in function TAN()  
 Fix for OPTION ANGLE not in function MATH (ATAN3 x,y)  
