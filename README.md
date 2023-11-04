@@ -14,7 +14,11 @@ Added Multiline comments to editor.
 Fixed potential issue with FILES command.       
 Closed SPI before saving Library incase it was open from a previous issue.   
 BACKLIGHT syntax updated to   
-BACKLIGHT percentage% [, DEFAULT|REVERSE]  
+BACKLIGHT percentage% [, DEFAULT|REVERSE] 
+Fix for OPTION ANGLE not defaulting to RADIANS on new RUN command.  
+Fix for OPTION ANGLE not in function TAN()  
+Fix for OPTION ANGLE not in function MATH (ATAN3 x,y)  
+Licence text added to source files.  
 
 V5.07.02b1:  
 Added ST7735S Display  
