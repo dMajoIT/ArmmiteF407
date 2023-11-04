@@ -95,7 +95,7 @@ typedef struct s_PinDef PinDefAlias;
 #define HAS_32PINS          (package==0x8)
 #define HAS_48PINS          (package==0xB)
 #define HAS_64PINS          (package==0x9 || package==0)
-#define HAS_100PINS          (package==0x10)
+#define HAS_100PINS          (package==0x7)  //was 10
 #define HAS_144PINS          (package==0x03)
 #define NBRPINS             (HAS_144PINS ? 144 : 100)
 
