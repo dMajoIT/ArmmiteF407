@@ -232,6 +232,7 @@ extern char DimUsed;
 extern void MIPS16 ListProgram(char *p, int all);
 extern char MIPS16 *llist(char *b, char *p);
 extern char *CheckIfTypeSpecified(char *p, int *type, int AllowDefaultType);
+extern void MIPS16 ListNewLine(int *ListCnt, int all);
 
 #define CONFIG_TITLE		0
 #define CONFIG_LOWER		1

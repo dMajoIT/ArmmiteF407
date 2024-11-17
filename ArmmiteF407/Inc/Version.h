@@ -44,16 +44,21 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 //#define DEBUGMODE
 
-#define VERSION         "5.07.02b2"
+#define VERSION         "5.07.02b3+"
 #define MES_SIGNON  "ARMmite MMBasic Version " VERSION
-#define YEAR		"2011-2023"			    // and the year
-#define YEAR2          "2016-2023"
+#define YEAR		"2011-2024"			    // and the year
+#define YEAR2          "2016-2024"
 #define COPYRIGHT  "\r\nCopyright " YEAR " Geoff Graham\r\nCopyright " YEAR2 " Peter Mather\r\n"
 
 // Beta 2 SPIClose() added before AppendLibrary incase left open by flash write fail
 //        multiline comments
 //        fix for potential FILES error from peter.
 //        BACKLIGHT value[,DEFAULT|REVERSE]
+//        OPTION ANGLE fixes
+// Beta 3
+//       mm.info(NBRPINS)
+//       fix to allow POKe(VARADDR for hashed INTEGER and FLOAT Variables now in CCRAM
+//       #define CMD_BUFFER_SIZE used to set command buffer size.
 
 // These options are compiled conditionally
 

@@ -76,6 +76,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define FLASH_INCLUDED
 
     // IMPORTANT: Change the string constant in cmd_memory() if you change PROG_FLASH_SIZE
+//#define EDIT_BUFFER_SIZE  ((unsigned int)(RAMEND - (unsigned int)RAMBase - 256*7))  // this is the maximum RAM that we can get
 #define EDIT_BUFFER_SIZE  ((unsigned int)(RAMEND - (unsigned int)RAMBase - 1024))  // this is the maximum RAM that we can get
 //#define SAVED_OPTIONS_FLASH 2
 //#define SAVED_VARS_FLASH 2
@@ -92,7 +93,7 @@ struct option_s {
     char DISPLAY_TYPE;
     char DISPLAY_ORIENTATION;
     unsigned char TOUCH_CS;
-    unsigned char TOUCH_IRQ;
+    unsigned char TOUCH_IRQ; //10
     char TOUCH_SWAPXY;
     // for the SPI LCDs
     unsigned char LCD_CD;
@@ -103,25 +104,27 @@ struct option_s {
     char DISPLAY_CONSOLE;
     char DefaultFont;
     char KeyboardConfig;
-    unsigned char TOUCH_Click;
+    unsigned char TOUCH_Click;  //20
     char DefaultBrightness;         // default backlight brightness
     char SerialPullup;
     char fulltime;
     char Refresh;
     unsigned char FLASH_CS;
-    char dummy[2];
+    unsigned char NoScroll;         //NoScroll from picomites added @beta3
+    char dummy[1];        //27
     short MaxCtrls;       //28        2  // maximum number of controls allowed
-    short RTC_Calibrate;  //32 bytes  2
-    int DISPLAY_WIDTH;    //36        4
-    int DISPLAY_HEIGHT;   //40        4
-    uint32_t  PIN;        //44        4
-    uint32_t  Baudrate;   //48        4
-    MMFLOAT TOUCH_XSCALE; //          4
-    MMFLOAT TOUCH_YSCALE; //64 bytes  4
-    unsigned int ProgFlashSize;    // 4 used to store the size of the program flash (also start of the LIBRARY code)
-    int DefaultFC, DefaultBC;      // 4  the default colours
-    short  TOUCH_XZERO; //            2
-    short  TOUCH_YZERO; //80 bytes    2
+    short RTC_Calibrate;  //32  (30)bytes  2
+    int DISPLAY_WIDTH;    //36  (32)      4
+    int DISPLAY_HEIGHT;   //40  (36)     4
+    uint32_t  PIN;        //44  (40)      4
+    uint32_t  Baudrate;   //48  (44)      4
+    MMFLOAT TOUCH_XSCALE; //56  (48)     8
+    MMFLOAT TOUCH_YSCALE; //64  (56)     8
+    unsigned int ProgFlashSize;    // 64  4 used to store the size of the program flash (also start of the LIBRARY code)
+    int DefaultFC, DefaultBC;      // 68  4  the default colours
+    short  TOUCH_XZERO;            // 72  2
+    short  TOUCH_YZERO; //80 bytes // 74  2
+                        // leaves 76,77,78,79  i.e 4 bytes
 
 };
 
