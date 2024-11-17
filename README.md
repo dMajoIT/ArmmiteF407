@@ -11,7 +11,8 @@ A compiled binary version is under the the binaries directory.
 A user manual for MMBasic on the STM32F407 is under the docs directory.  
 
 
-Change list from V5.07.00
+Change list from V5.07.00  
+
 V5.07.02b3:  
 
 
