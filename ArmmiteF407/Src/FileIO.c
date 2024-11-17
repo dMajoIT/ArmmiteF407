@@ -87,7 +87,7 @@ uint32_t fmode[MAXOPENFILES+1]={0};
 static unsigned int bw[MAXOPENFILES+1]={[0 ... MAXOPENFILES ] = -1};
 
 extern RTC_HandleTypeDef hrtc;
-
+#define overlap (VRes % (FontTable[gui_font >> 4][1] * (gui_font & 0b1111)) ? 0 : 1)
 /*****************************************************************************************
 Mapping of errors reported by the file system to MMBasic file errors
 *****************************************************************************************/
@@ -540,6 +540,7 @@ void cmd_files(void) {
 	s_flist *flist;
     static DIR djd;
     static FILINFO fnod;
+    char outbuff[STRINGSIZE]={0};
 	memset(&djd,0,sizeof(DIR));
 	memset(&fnod,0,sizeof(FILINFO));
 	if(CurrentLinePtr) error("Invalid in a program");
@@ -554,6 +555,7 @@ void cmd_files(void) {
     flist=GetMemory(sizeof(s_flist)*MAXFILES);
      // print the current directory
     q = GetCWD();
+    if(Option.DISPLAY_CONSOLE){ClearScreen(gui_bcolour);CurrentX=0;CurrentY=0;}
     MMPrintString("A");MMPrintString(q); PRet();
 
     // search for the first file/dir
@@ -592,28 +594,53 @@ void cmd_files(void) {
 
     // list the files with a pause every screen full
 	ListCnt = 2;
+    unsigned char noscroll=Option.NoScroll;
+    //Option.NoScroll=0;
 	for(i = dirs = 0; i < fcnt; i++) {
+		memset(outbuff,0,sizeof(outbuff));
         if(MMAbort) {
             FreeMemory(flist);
             f_closedir(&djd);
             WDTimer = 0;                                                // turn off the watchdog timer
+            //Option.NoScroll=noscroll;
             longjmp(mark, 1);                                           // jump back to the input prompt
         }
 		if(flist[i].fn[0] == 'D') {
     		dirs++;
-            MMPrintString("   <DIR>  ");
+    		strcpy(outbuff,"   <DIR>  ");
+            //MMPrintString("   <DIR>  ");
 		}
 		else {
-            IntToStrPad(ts, flist[i].fs, ' ', 10, 10); MMPrintString(ts);
+            IntToStrPad(ts, flist[i].fs, ' ', 10, 10); //MMPrintString(ts);
             MMPrintString("  ");
+            strcpy(outbuff,ts);
+            strcat(outbuff,"  ");
         }
-        MMPrintString(flist[i].fn + 1);
-		PRet();
+        //MMPrintString(flist[i].fn + 1);
+		//PRet();
+		strcat(outbuff,flist[i].fn + 1);
+
+
+		char *pp=outbuff;
+		while(*pp) {
+		if(MMCharPos >= Option.Width) ListNewLine(&ListCnt, 0);
+			MMputchar(*pp++);
+		}
+		//fflush(stdout);
+		ListNewLine(&ListCnt, 0);
 		// check if it is more than a screen full
-		if(++ListCnt >= Option.Height && i < fcnt) {
+		//if(++ListCnt >= Option.Height && i < fcnt) {
+		if (ListCnt >= Option.Height-overlap && i < fcnt){
+			//unsigned char noscroll=Option.NoScroll;
+		    Option.NoScroll=0;
+			#ifdef USBKEYBOARD
+			clearrepeat();
+			#endif
 			MMPrintString("PRESS ANY KEY ...");
 			MMgetchar();
+			Option.NoScroll=noscroll;
 			MMPrintString("\r                 \r");
+			if(Option.DISPLAY_CONSOLE){ClearScreen(gui_bcolour);CurrentX=0;CurrentY=0;}
 			ListCnt = 1;
 		}
 	}
@@ -625,6 +652,7 @@ void cmd_files(void) {
 	PRet();
     FreeMemory(flist);
     f_closedir(&djd);
+    Option.NoScroll=noscroll;
 	longjmp(mark, 1);                                               // jump back to the input prompt
 }
 

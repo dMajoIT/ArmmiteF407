@@ -1,8 +1,7 @@
 
 /*-*****************************************************************************
 
-MMBasic  for STM32F407xGT6 (Armmite F4)
-Supports STM32F405RGT6,STM32F407VGT6,STM32F407ZGT6
+MMBasic  for STM32F407VET6 (Armmite F4)
 
 main.c
 
@@ -107,6 +106,8 @@ DAC_HandleTypeDef hdac;
 I2C_HandleTypeDef hi2c1;
 I2C_HandleTypeDef hi2c2;
 
+CAN_HandleTypeDef hcan;
+
 RNG_HandleTypeDef hrng;
 
 RTC_HandleTypeDef hrtc;
@@ -148,7 +149,9 @@ char IgnorePIN = false;
 char WatchdogSet = false;
 uint8_t RxBuffer, TxBuffer;
 #define progress  "\rprogress\r\n"
+int ListCnt;
 int MMCharPos;
+int MMPromptPos;
 char LCDAttrib;
 volatile int MMAbort = false;
 int use_uart;
@@ -169,11 +172,16 @@ volatile int ConsoleTxBufTail = 0;
 extern volatile unsigned int ScrewUpTimer;
 extern jmp_buf jmprun;
 
+extern void dacclose(void);
+extern void ADCclose(void);
+
 uint8_t BlinkSpeed = 0, str[20];
 extern void printoptions(void);
 uint32_t PROG_FLASH_SIZE = 0x20000;
 void initConsole(void);
 char SerialConDisabled;
+
+char canopen=0;	  //CAN has no pins assigned
 
 #define DISPLAY_CLS             1
 #define REVERSE_VIDEO           3
@@ -190,33 +198,35 @@ extern void MX470Display(int fn);
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_RTC_Init(void);
-static void MX_ADC1_Init(void);
-static void MX_ADC2_Init(void);
-static void MX_ADC3_Init(void);
+//static void MX_ADC1_Init(void);
+//static void MX_ADC2_Init(void);
+//static void MX_ADC3_Init(void);
 static void MX_DAC_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_TIM3_Init(void);
 static void MX_TIM9_Init(void);
-static void MX_UART4_Init(void);
-static void MX_USART2_UART_Init(void);
+//static void MX_UART4_Init(void);
+//static void MX_USART2_UART_Init(void);
 static void MX_TIM4_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_I2C2_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_SPI1_Init(void);
 static void MX_SPI2_Init(void);
-static void MX_FSMC_Init(void);
+//static void MX_FSMC_Init(void);
 static void MX_RNG_Init(void);
+static void MX_CAN1_Init(void);
 static void MX_TIM1_Init(void);
 static void MX_TIM5_Init(void);
-static void MX_TIM6_Init(void);
-static void MX_TIM7_Init(void);
+//static void MX_TIM6_Init(void);
+//static void MX_TIM7_Init(void);
 static void MX_TIM10_Init(void);
 static void MX_TIM12_Init(void);
-static void MX_USART6_UART_Init(void);
+//static void MX_USART6_UART_Init(void);
 static void MX_SDIO_SD_Init(void);
 /* USER CODE BEGIN PFP */
-static void myMX_FSMC_Init(void);
+//static void myMX_FSMC_Init(void);
+extern void myMX_FSMC_Init(void);
 void SerialConsolePutC(int c);
 int MMgetchar(void);
 void CheckAbort(void);
@@ -237,14 +247,71 @@ void executelocal(char *p);
 
 /* USER CODE END 0 */
 
-char lastcmd[STRINGSIZE*4];            // used to store the last command in case it is needed by the EDIT command (leaves about 512bytes in CCRAM after this)
+//char lastcmd[STRINGSIZE*4];            // used to store the last command in case it is needed by the EDIT command (leaves about 512bytes in CCRAM after this)
+//void InsertLastcmd( char *s);
+#define CMD_BUFFER_SIZE STRINGSIZE*4
+char lastcmd[CMD_BUFFER_SIZE];            // used to store the last command in case it is needed by the EDIT command
 void InsertLastcmd( char *s);
 
 
+
   //int terminal_width,terminal_height;
-  extern void setterminal(void);
+  extern void  setterminal(int height,int width);
+  extern void cleanend(void);
 
 
+
+  /* cleanend() is called from checkabort() at CNTRL+C and also from cmd_end().
+   * It is also called from error() before the command prompt is displayed.
+   * It is used to clean up any background tasks that are running and may affected
+   * MMBasic at the command prompt before control is returned to the command prompt.
+   * It is generally a subset of ClearExternalIO() but attempts to leave the environment
+   * in place to allow debugging of the current program and to allow use of the CONTINUE command.
+   *
+   */
+
+
+
+  void cleanend(void){
+  	  //int i;
+	  dacclose();
+	  ADCclose();
+    // memset(inpbuf,0,STRINGSIZE);
+    // int lastgui=gui_font_height;
+  	//SetFont(Option.DefaultFont);
+  	//adjust=gui_font_height-lastgui;
+     // if(mouse1)i2c_disable();                                                  // close I2C
+     // if(mouse2)i2c2_disable();                                                  // close I2C
+     // if(mouse3)i2c3_disable();                                                  // close I2C
+
+      //OnKeyGOSUB=NULL;							            // set the next stmt to the interrupt location
+     // com1_interrupt=NULL;									// set the next stmt to the interrupt location
+     // com1_TX_interrupt=NULL;
+     // com2_interrupt=NULL;									// set the next stmt to the interrupt location
+     // com2_TX_interrupt=NULL;
+     // com3_interrupt=NULL;									// set the next stmt to the interrupt location
+     // com3_TX_interrupt=NULL;
+    //  com4_interrupt=NULL;									// set the next stmt to the interrupt location
+    //  com4_TX_interrupt=NULL;
+
+ //     KeyInterrupt=NULL;									    // set the next stmt to the interrupt location
+ //     WAVInterrupt=NULL;									    // set the next stmt to the interrupt location
+ //     COLLISIONInterrupt=NULL;							    // set the next stmt to the interrupt location
+ //     ADCInterrupt=NULL;									    // set the next stmt to the interrupt location
+ //     DACInterrupt=NULL;									    // set the next stmt to the interrupt location
+  //    IrInterrupt=NULL;									    // set the next stmt to the interrupt location
+  //    for(i = 0; i < NBRINTERRUPTS; i++) {                            // scan through the interrupt table
+  //    	inttbl[i].intp=NULL;							// set the next stmt to the interrupt location
+  //    }
+  //    for(i = 0; i < NBRSETTICKS; i++) {
+  //    	TickInt[i]=NULL;
+  //    }
+ //     keyselect=0;
+
+  //	  CloseAudio(1);
+  //    CloseAllFiles();
+      longjmp(mark, 1);
+  }
 
 #ifdef DUMP
 
@@ -466,34 +533,36 @@ int main(void)
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
-  MX_GPIO_Init();
-  MX_RTC_Init();
-  MX_USB_DEVICE_Init();
-  MX_ADC1_Init();
-  MX_ADC2_Init();
-  MX_ADC3_Init();
-  MX_DAC_Init();
-  MX_TIM2_Init();
-  MX_TIM3_Init();
-  MX_TIM9_Init();
-  MX_UART4_Init();
-  MX_USART2_UART_Init();
-  MX_TIM4_Init();
-  MX_I2C1_Init();
-  MX_I2C2_Init();
-  MX_USART1_UART_Init();
-  MX_SPI1_Init();
-  MX_SPI2_Init();
-  MX_FSMC_Init();
-  MX_RNG_Init();
-  MX_TIM5_Init();
-  MX_TIM6_Init();
-  MX_TIM7_Init();
-  MX_TIM10_Init();
-  MX_TIM12_Init();
-  MX_USART6_UART_Init();
-  MX_SDIO_SD_Init();
-  MX_FATFS_Init();
+
+  //MX_GPIO_Init();
+ // MX_RTC_Init();
+ // MX_USB_DEVICE_Init();
+  //MX_ADC1_Init();
+  //MX_ADC2_Init();
+  //MX_ADC3_Init();
+  //MX_DAC_Init();
+  //MX_TIM2_Init();
+  //MX_TIM3_Init();
+ // MX_TIM9_Init();
+//  MX_UART4_Init();
+//  MX_USART2_UART_Init();
+ // MX_TIM4_Init();
+//  MX_I2C1_Init();
+//  MX_I2C2_Init();
+ // MX_USART1_UART_Init();
+ // MX_SPI1_Init();
+ // MX_SPI2_Init();
+  //MX_FSMC_Init();
+ // MX_RNG_Init();
+ // MX_TIM5_Init();
+  //MX_TIM6_Init();
+  //MX_TIM7_Init();
+ // MX_TIM10_Init();
+ // MX_TIM12_Init();
+ // MX_USART6_UART_Init();
+ // MX_SDIO_SD_Init();
+ // MX_FATFS_Init();
+
   /* USER CODE BEGIN 2 */
   skip_init:
   	MX_GPIO_Init();
@@ -544,8 +613,10 @@ int main(void)
   	MX_SPI1_Init();
   	MX_I2C1_Init();
   	MX_I2C2_Init();
-    myMX_FSMC_Init();
+    //myMX_FSMC_Init();
+    //myMX_FSMC_DeInit();
     MX_SDIO_SD_Init();
+    MX_CAN1_Init();
     initExtIO();
 	if(Option.SerialConDisabled==0){
 		SetAndReserve(COM1_TX_PIN, P_OUTPUT, 1, EXT_BOOT_RESERVED);                            // config data/command as an output
@@ -588,7 +659,8 @@ int main(void)
 //    InitFileIO();
     BasicRunning = true;
     ErrorInPrompt = false;
-    if(!(_excep_code == RESTART_NOAUTORUN || _excep_code == RESET_COMMAND || _excep_code == WATCHDOG_TIMEOUT || _excep_code == RESTART_HEAP)){
+    /********************** Only print the banner if not one of these events  **************/
+    if(!(_excep_code == RESTART_NOAUTORUN || _excep_code == RESET_COMMAND || _excep_code == WATCHDOG_TIMEOUT || _excep_code == SCREWUP_TIMEOUT || _excep_code == RESTART_HEAP)){
   	  if(Option.Autorun==0 ){
   		  MMPrintString(MES_SIGNON); //MMPrintString(b);              // print sign on message
   		  MMPrintString(COPYRIGHT);                                   // print copyright message
@@ -603,7 +675,7 @@ int main(void)
         MMPrintString("\r\n\nWatchdog timeout\r\n");
     }
     if(_excep_code == SCREWUP_TIMEOUT) {
-          MMPrintString("\r\n\nCommand timeout\r\n");
+    	   MMPrintString("\r\n\nCommand timeout\r\n");
     }
     HAL_DAC_Start(&hdac, DAC_CHANNEL_1);
     HAL_DAC_Start(&hdac, DAC_CHANNEL_2);
@@ -630,6 +702,7 @@ int main(void)
         // we got here via a long jump which means an error or CTRL-C or the program wants to exit to the command prompt
 
     	ScrewUpTimer=0;
+    	optionangle=1.0;
 
         ContinuePoint = nextstmt;                                   // in case the user wants to use the continue command
         *tknbuf = 0;                                                // we do not want to run whatever is in the token buffer
@@ -666,7 +739,7 @@ int main(void)
 //    if(HAS_100PINS)MMPrintString("STM32F407\r\n");
 //    if(HAS_64PINS)MMPrintString("STM32F405\r\n");
 //
-//     PIntH(chipID);PIntHC(package);PIntComma(flashsize & 0xFFFF);PRet();
+     //PIntH(chipID);PIntHC(package);PIntComma(flashsize & 0xFFFF);PRet();
 //
 //   ExtCfg(2, EXT_DIG_OUT, 0);
 //   PinSetBit(2,LATCLR);
@@ -720,8 +793,10 @@ int main(void)
         if(!ErrorInPrompt && FindSubFun("MM.PROMPT", 0) >= 0) {
             ErrorInPrompt = true;
             ExecuteProgram("MM.PROMPT\0");
+            MMPromptPos=MMCharPos-1;    //Save length of prompt
         } else {
             MMPrintString("> ");                                    // print the prompt
+            MMPromptPos=2;    //Save length of prompt
         }
         ErrorInPrompt = false;
         EditInputLine();          //Enter|Recall|Edit the command line. Save to command history
@@ -813,6 +888,7 @@ void SystemClock_Config(void)
   HAL_PWREx_EnableBkUpReg();
   HAL_PWR_EnableBkUpAccess();
 }
+#ifdef XXX
 /**
   * @brief ADC1 Initialization Function
   * @param None
@@ -963,6 +1039,8 @@ static void MX_ADC3_Init(void)
 
 }
 
+#endif
+
 /**
   * @brief DAC Initialization Function
   * @param None
@@ -1072,6 +1150,43 @@ static void MX_I2C2_Init(void)
   /* USER CODE BEGIN I2C2_Init 2 */
 
   /* USER CODE END I2C2_Init 2 */
+
+}
+
+/**
+  * @brief CAN1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_CAN1_Init(void)
+{
+
+  /* USER CODE BEGIN CAN1_Init 0 */
+
+  /* USER CODE END CAN1_Init 0 */
+
+  /* USER CODE BEGIN CAN1_Init 1 */
+
+  /* USER CODE END CAN1_Init 1 */
+  hcan.Instance = CAN1;
+  hcan.Init.Prescaler = 16;
+  hcan.Init.Mode = CAN_MODE_NORMAL;
+  hcan.Init.SyncJumpWidth = CAN_SJW_1TQ;
+  hcan.Init.TimeSeg1 = CAN_BS1_14TQ;
+  hcan.Init.TimeSeg2 = CAN_BS2_6TQ;
+  hcan.Init.TimeTriggeredMode = DISABLE;
+  hcan.Init.AutoBusOff = DISABLE;
+  hcan.Init.AutoWakeUp = DISABLE;
+  hcan.Init.AutoRetransmission = ENABLE;
+  hcan.Init.ReceiveFifoLocked = DISABLE;
+  hcan.Init.TransmitFifoPriority = DISABLE;
+  if (HAL_CAN_Init(&hcan) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN CAN1_Init 2 */
+
+  /* USER CODE END CAN1_Init 2 */
 
 }
 
@@ -1593,7 +1708,7 @@ static void MX_TIM5_Init(void)
   /* USER CODE END TIM5_Init 2 */
 
 }
-
+#ifdef xxx
 /**
   * @brief TIM6 Initialization Function
   * @param None
@@ -1669,6 +1784,8 @@ static void MX_TIM7_Init(void)
   /* USER CODE END TIM7_Init 2 */
 
 }
+
+#endif
 
 /**
   * @brief TIM9 Initialization Function
@@ -1788,6 +1905,7 @@ static void MX_TIM12_Init(void)
   /* USER CODE END TIM12_Init 2 */
 
 }
+#ifdef xxx
 /**
   * @brief UART4 Initialization Function
   * @param None
@@ -1821,6 +1939,8 @@ static void MX_UART4_Init(void)
 
 }
 
+#endif
+
 /**
   * @brief USART1 Initialization Function
   * @param None
@@ -1853,12 +1973,13 @@ static void MX_USART1_UART_Init(void)
   /* USER CODE END USART1_Init 2 */
 
 }
-
+#ifdef XXX
 /**
   * @brief USART2 Initialization Function
   * @param None
   * @retval None
   */
+
 static void MX_USART2_UART_Init(void)
 {
 
@@ -1892,6 +2013,7 @@ static void MX_USART2_UART_Init(void)
   * @param None
   * @retval None
   */
+
 static void MX_USART6_UART_Init(void)
 {
 
@@ -1919,6 +2041,8 @@ static void MX_USART6_UART_Init(void)
   /* USER CODE END USART6_Init 2 */
 
 }
+
+#endif
 
 /**
   * @brief GPIO Initialization Function
@@ -1982,7 +2106,7 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_Init(KBD_DATA_GPIO_Port, &GPIO_InitStruct);
 
 }
-
+#ifdef XXX
 /* FSMC initialization function */
 static void MX_FSMC_Init(void)
 {
@@ -2035,10 +2159,12 @@ static void MX_FSMC_Init(void)
 
   /* USER CODE END FSMC_Init 2 */
 }
+#endif
 
 /* USER CODE BEGIN 4 */
 /* FSMC initialization function */
-static void myMX_FSMC_Init(void)
+//static void myMX_FSMC_Init(void)
+void myMX_FSMC_Init(void)
 {
   FSMC_NORSRAM_TimingTypeDef WTiming, RTiming;
 
@@ -2133,7 +2259,6 @@ void SerialConsolePutC(int c) {
 		ConsoleTxBufHead = (ConsoleTxBufHead + 1) % CONSOLE_TX_BUF_SIZE;		   // advance the head of the queue
 		HAL_ResumeTick();
 	}
-
 }
 // get a char from the UART1 serial port (the console)
 // will return immediately with -1 if there is no character waiting
@@ -2185,7 +2310,8 @@ void SoftReset(void){
 void inline __attribute__((always_inline))  CheckAbort(void) {
     if(MMAbort) {
         WDTimer = 0;                                                // turn off the watchdog timer
-        longjmp(mark, 1);                                           // jump back to the input prompt
+        //longjmp(mark, 1);                                         // jump back to the input prompt
+        cleanend();
     }
 }
 /*****************************************************************************************
@@ -2676,12 +2802,12 @@ void InsertLastcmd( char *s) {
 int i, slen;
     if(strcmp(lastcmd, s) == 0) return;                             // don't duplicate
     slen = strlen(s);
-    if(slen < 1 || slen > STRINGSIZE*4 - 1) return;
+    if(slen < 1 || slen > CMD_BUFFER_SIZE - 1) return;
     slen++;
-    for(i = STRINGSIZE*4 - 1; i >=  slen ; i--)
+    for(i = CMD_BUFFER_SIZE - 1; i >=  slen ; i--)
         lastcmd[i] = lastcmd[i - slen];                             // shift the contents of the buffer up
     strcpy(lastcmd, s);                                             // and insert the new string in the beginning
-    for(i = STRINGSIZE*4 - 1; lastcmd[i]; i--) lastcmd[i] = 0;             // zero the end of the buffer
+    for(i = CMD_BUFFER_SIZE - 1; lastcmd[i]; i--) lastcmd[i] = 0;             // zero the end of the buffer
 }
 
 // Debug display onto LCDPANEL
@@ -2702,37 +2828,26 @@ void EditInputLine(void) {
     char *p = NULL;
     char buf[MAXKEYLEN + 3];
     char goend[10];
-    char linelen[10];
+ //   char linelen[10];
     int lastcmd_idx, lastcmd_edit;
     int insert, /*startline,*/ maxchars;
     int CharIndex, BufEdited;
     int c, i, j;
     int l4,l3,l2;
-    //maxchars = 2*Option.Width-1;
     maxchars=255; //i.e. 3 lines on Vt100 width 80 -2 characters for prompt.
-   // l2=78;  //  Option.width-2
-   // l3=158; // 2*Option.Width -2
-   // l4=238; // 3*Option.Width -2
-    if(Option.DISPLAY_CONSOLE){
-      l2=SCREENWIDTH-2;
-      l3=2*SCREENWIDTH-2;
-      l4=3*SCREENWIDTH-2;
-    }else{
-      l2=Option.Width -2;
-      l3=2*Option.Width-2;
-      l4=3*Option.Width-2;
-    }
-    // Build "\e[80C" equivalent string for the line length
-    strcpy(goend,"\e[");IntToStr(linelen,l2+2, 10);strcat(goend,linelen); strcat(goend, "C");
+    if(Option.DISPLAY_CONSOLE && Option.Width<=SCREENWIDTH){     //We will always assume the Vt100 is 80 colums if LCD is the console <=80.
+       l2=SCREENWIDTH+1-MMPromptPos;
+       l3=2*SCREENWIDTH+2-MMPromptPos;
+       l4=3*SCREENWIDTH+3-MMPromptPos;
+     }else{                         // otherwise assume the VT100 matches Option.Width
+       l2=Option.Width +1-MMPromptPos;
+       l3=2*Option.Width+2-MMPromptPos;
+       l4=3*Option.Width+3-MMPromptPos;
+     }
 
-    //if(strlen(inpbuf) >= maxchars) {
-       // MMPrintString(inpbuf);
-        //BufEdited = false;
-        //i = strlen(inpbuf);
-        //for(p = inpbuf + i; *p; p++) *p = *(p + 1);                 // remove the char from inpbuf
-       // error("Line is too long to edit 1");
-   // }
-   // startline = MMCharPos - 1;                                                          // save the current cursor position
+     // Build "\e[80C" equivalent string for the line length
+     strcpy(goend,"\e[");IntToStr(&goend[strlen(goend)],l2+MMPromptPos, 10);strcat(goend, "C");
+
     MMPrintString(inpbuf);                                                              // display the contents of the input buffer (if any)
     CharIndex = strlen(inpbuf);                                                         // get the current cursor position in the line
     insert = false;
@@ -2740,14 +2855,7 @@ void EditInputLine(void) {
     lastcmd_edit = lastcmd_idx = 0;
     BufEdited = false; //(CharIndex != 0);
     while(1) {
-    	//do {
-    		  //if(BufEdited)ShowCursor(true);
-    		  //ShowCursor(true);
-    		  c=MMgetchar(); //need this as it checks SDCARD and GPS
-    		 // c = MMInkey();
-    	//	} while(c == -1);
-    	//	ShowCursor(false);
-
+    	c=MMgetchar(); //need this as it checks SDCARD and GPS
         if(c == TAB) {
             strcpy(buf, "        ");
             switch (Option.Tab) {
@@ -2768,70 +2876,43 @@ void EditInputLine(void) {
         do {
             switch(buf[0]) {
                 case '\r':
-                case '\n':  //if(autoOn && atoi(inpbuf) > 0) autoNext = atoi(inpbuf) + autoIncr;
-                            //if(autoOn && !BufEdited) *inpbuf = 0;
+                case '\n':
                             goto saveline;
                             break;
 
                 case '\b':
-                	           if(CharIndex > 0) {
-                	                 BufEdited = true;
+                	        if(CharIndex > 0) {
+                	           BufEdited = true;
+                               i = CharIndex - 1;
+                               j= CharIndex;
+                               for(p = inpbuf + i; *p; p++) *p = *(p + 1);                       // remove the char from inpbuf
 
-                                     i = CharIndex - 1;
-                                     j= CharIndex;
-                                     for(p = inpbuf + i; *p; p++) *p = *(p + 1);                       // remove the char from inpbuf
+                                    // Lets put the cursor at the beginning of where the command is displayed.
+                                    // backspace to the beginning of line
 
-                                 // Lets put the cursor at the beginning of where the command is displayed.
-#define USEBACKSPACE
-#ifdef USEBACKSPACE
-                                // backspace to the beginning of line
-                                //if(j > 0) {
-                                while(j)  {
+                               while(j)  {
                                   // MMputchar('\b');
                                   if (j==l4 || j==l3 ||j==l2 ){DisplayPutC('\b');SerUSBPutS("\e[1A");SerUSBPutS(goend);}else{ MMputchar('\b');}
                                   j--;
-                                }
-                                fflush(stdout);
-                                // MMCharPos=3;CurrentX=2*gui_font_width;
-                                MX470Display(CLEAR_TO_EOS);SerUSBPutS("\033[0J");        //Clear to End Of Screen
+                               }
+                               fflush(stdout);
+                               MX470Display(CLEAR_TO_EOS);SerUSBPutS("\033[0J");        //Clear to End Of Screen
+                               j=0;
+                               while(j < strlen(inpbuf)) {
+                                     MMputchar(inpbuf[j]);
+                                     if((j==l4-1 || j==l3-1 || j==l2-1 ) && j == strlen(inpbuf)-1 ){SerUSBPutS(" ");SerUSBPutS("\b");}
+                                     if((j==l4-1 || j==l3-1 || j==l2-1 ) && j < strlen(inpbuf)-1 ){SerUSBPutC(inpbuf[j+1]);SerUSBPutS("\b");}
+                                     j++;
+                               }
+                               fflush(stdout);
 
-
-#else
-                                 CurrentX=0;CurrentY=CurrentY-((CharIndex+1)/Option.Width * gui_font_height);
-                                 if (CharIndex>l4-1)SerUSBPutS("\e[3A");
-                                 else if (CharIndex>l3-1)SerUSBPutS("\e[2A");
-                                 else if(CharIndex>l2-1)SerUSBPutS("\e[1A");
-                                 SerUSBPutS("\r");
-                                 //CurrentX=0;SerUSBPutS("\r");
-                                 MX470Display(CLEAR_TO_EOS);
-                                 SerUSBPutS("\033[0J");
-        				         MMPrintString("> ");
-        				         fflush(stdout);
-
-
-#endif
-
-                                 j=0;
-                                 while(j < strlen(inpbuf)) {
-                                       //BufEdited = true;
-                                      // MMPrintString(inpbuf);
-                                       MMputchar(inpbuf[j]);
-                                       if((j==l4-1 || j==l3-1 || j==l2-1 ) && j == strlen(inpbuf)-1 ){SerUSBPutS(" ");SerUSBPutS("\b");}
-                                       if((j==l4-1 || j==l3-1 || j==l2-1 ) && j < strlen(inpbuf)-1 ){SerUSBPutC(inpbuf[j+1]);SerUSBPutS("\b");}
-
-                                      j++;
-                                 }
-                                 fflush(stdout);
-
-                                 // return the cursor to the right position
-                                 for(j = strlen(inpbuf); j > i; j--){
-                                  //  MMputchar('\b');
-                                    if (j==l4 || j==l3 || j==l2) {DisplayPutC('\b');SerUSBPutS("\e[1A");SerUSBPutS(goend);}else{MMputchar('\b');}
-                                 }
-                                 CharIndex--;
-
-                                 fflush(stdout);
-                                 if(strlen(inpbuf)==0)BufEdited = false;
+                               // return the cursor to the right position
+                               for(j = strlen(inpbuf); j > i; j--){
+                                  if (j==l4 || j==l3 || j==l2) {DisplayPutC('\b');SerUSBPutS("\e[1A");SerUSBPutS(goend);}else{MMputchar('\b');}
+                               }
+                               CharIndex--;
+                               fflush(stdout);
+                               if(strlen(inpbuf)==0)BufEdited = false;
                             }
                             break;
 
@@ -2843,16 +2924,11 @@ void EditInputLine(void) {
                 	    BufEdited = true;
                 	    insert=false; //left at first char will turn OVR on
                 	    if(CharIndex > 0) {
-                                if(CharIndex == strlen(inpbuf)) {
-                                    //insert = true;
-                                }
-                                //MMputchar('\b');
                                 if (CharIndex==l4 || CharIndex==l3 || CharIndex==l2 ){DisplayPutC('\b');SerUSBPutS("\e[1A");SerUSBPutS(goend);}else{MMputchar('\b');}
-                                //if(CharIndex==l2){SerUSBPutS("\e[1A");SerUSBPutS("\e[80C");}
                                 insert=true; //Any left turns on INS
                                 CharIndex--;
                          }
-                     break;
+                         break;
 
                 /****************************************** --->  arrow *****************************************************/
                 case CTRLKEY('D'):
@@ -2863,17 +2939,15 @@ void EditInputLine(void) {
                 	    MMputchar(inpbuf[CharIndex]);
                 	    if((CharIndex==l4-1 || CharIndex==l3-1|| CharIndex==l2-1 ) && CharIndex == strlen(inpbuf)-1 ){SerUSBPutS(" ");SerUSBPutS("\b");}
                 	    if((CharIndex==l4-1 || CharIndex==l3-1|| CharIndex==l2-1 ) && CharIndex < strlen(inpbuf)-1 ){SerUSBPutC(inpbuf[CharIndex+1]);SerUSBPutS("\b");}
-                    	//if(CharIndex==l2-1 && CharIndex < strlen(inpbuf)-1){SerUSBPutC(inpbuf[CharIndex+1]);SerUSBPutS("\b");}
                         CharIndex++;
                       }
 
                       insert=false; //right always switches to OVER
-                     break;
+                      break;
 
                 /*********************************************DEL ********************************************************/
                 case CTRLKEY(']'):
                 case DEL:
-
                 	      if(CharIndex < strlen(inpbuf)) {
                 	           BufEdited = true;
                 	           i = CharIndex;
@@ -2881,46 +2955,14 @@ void EditInputLine(void) {
                 	           for(p = inpbuf + i; *p; p++) *p = *(p + 1);                 // remove the char from inpbuf
                 	           j = strlen(inpbuf);
                 	           // Lets put the cursor at the beginning of where the command is displayed.
-
-
-#ifdef USEBACKSPACE
                                 // backspace to the beginning of line
-                                //if(j > 0) {
-                	            j=CharIndex;
+                                j=CharIndex;
                                 while(j)  {
-                                  // MMputchar('\b');
                                   if (j==l4 || j==l3 ||j==l2 ){DisplayPutC('\b');SerUSBPutS("\e[1A");SerUSBPutS(goend);}else{ MMputchar('\b');}
                                   j--;
                                 }
                                 fflush(stdout);
-                                // MMCharPos=3;CurrentX=2*gui_font_width;
                                 MX470Display(CLEAR_TO_EOS);SerUSBPutS("\033[0J");        //Clear to End Of Screen
-
-
-#else
-                                 CurrentX=0;CurrentY=CurrentY-((CharIndex+1)/Option.Width * gui_font_height);
-                                 if (CharIndex>l4-1)SerUSBPutS("\e[3A");
-                                 else if (CharIndex>l3-1)SerUSBPutS("\e[2A");
-                                 else if(CharIndex>l2-1)SerUSBPutS("\e[1A");
-                                 SerUSBPutS("\r");
-                                 //CurrentX=0;SerUSBPutS("\r");
-                                 MX470Display(CLEAR_TO_EOS);
-                                 SerUSBPutS("\033[0J");
-        				         MMPrintString("> ");
-        				         fflush(stdout);
-
-
-                  	          // CurrentX=0;CurrentY=CurrentY-((CharIndex+1)/Option.Width * gui_font_height);
-                  	          // if (CharIndex>l4)SerUSBPutS("\e[3A");
-                  	          // else if (CharIndex>l3)SerUSBPutS("\e[2A");
-                  	          // else if(CharIndex>l2)SerUSBPutS("\e[1A");
-                  	         //  SerUSBPutS("\r");
-                  	         //  MMPrintString("> ");MX470Display(CLEAR_TO_EOS);SerUSBPutS("\033[0J");        //Clear to End Of Screen
-
-
-#endif
-
-
                                j=0;
                                while(j < strlen(inpbuf)) {
                                     MMputchar(inpbuf[j]);
@@ -2931,8 +2973,7 @@ void EditInputLine(void) {
                                fflush(stdout);
                                // return the cursor to the right position
                                for(j = strlen(inpbuf); j > i; j--){
-                                     // MMputchar('\b');
-                                      if (j==l4 || j==l3 || j==l2) {DisplayPutC('\b');SerUSBPutS("\e[1A");SerUSBPutS(goend);}else{ MMputchar('\b');}
+                                    if (j==l4 || j==l3 || j==l2) {DisplayPutC('\b');SerUSBPutS("\e[1A");SerUSBPutS(goend);}else{ MMputchar('\b');}
                                }
                                fflush(stdout);
                            }
@@ -2942,7 +2983,7 @@ void EditInputLine(void) {
                 case CTRLKEY('N'):
                 case INSERT:insert = !insert;
 
-                            break;
+                           break;
 
                /*********************************************HOME ********************************************************/
                 case CTRLKEY('U'):
@@ -2954,14 +2995,13 @@ void EditInputLine(void) {
                                 }
                                 // backspace to the beginning of line
                                 while(CharIndex)  {
-                                	// MMputchar('\b');
-
                                 	 if (CharIndex==l4 || CharIndex==l3 || CharIndex==l2 ){DisplayPutC('\b');SerUSBPutS("\e[1A");SerUSBPutS(goend);}else{MMputchar('\b');}
                                    	 CharIndex--;
                                 }
                                 fflush(stdout);
-                            }else{ //HOME @ home turns off edit mode
+                            }else{                            //HOME @ home turns off edit mode
                             	BufEdited = false;
+                            	insert=false;                   //home at first char will turn OVR on
                             }
                             break;
               /*********************************************END ********************************************************/
@@ -2973,18 +3013,6 @@ void EditInputLine(void) {
                             fflush(stdout);
                             break;
 
-/*            if(c == F2)  tp = "RUN";
-            if(c == F3)  tp = "LIST";
-            if(c == F4)  tp = "EDIT";
-            if(c == F10) tp = "AUTOSAVE";
-            if(c == F11) tp = "XMODEM RECEIVE";
-            if(c == F12) tp = "XMODEM SEND";
-            if(c == F5) tp = Option.F5key;
-            if(c == F6) tp = Option.F6key;
-            if(c == F7) tp = Option.F7key;
-            if(c == F8) tp = Option.F8key;
-            if(c == F9) tp = Option.F9key;
-*/
              /****************************************Function Keys ***************************************************/
                 case 0x91:      //F1
                     break;
@@ -3035,7 +3063,7 @@ void EditInputLine(void) {
 
                 	            if(lastcmd_edit) {
                                     i = lastcmd_idx + strlen(&lastcmd[lastcmd_idx]) + 1;    // find the next command
-                                    if(lastcmd[i] != 0 && i < STRINGSIZE*4 - 1) lastcmd_idx = i;  // and point to it for the next time around
+                                    if(lastcmd[i] != 0 && i < CMD_BUFFER_SIZE - 1) lastcmd_idx = i;  // and point to it for the next time around
                                 } else
                                     lastcmd_edit = true;
                                 strcpy(inpbuf, &lastcmd[lastcmd_idx]);                      // get the command into the buffer for editing
@@ -3060,45 +3088,38 @@ void EditInputLine(void) {
 
                 insert_lastcmd:                                                             // goto here if we are just recalling a command from buffer
 
+				        // If NoScroll and its near the bottom then clear screen and write command at top
+				          // if(Option.NoScroll && Option.DISPLAY_CONSOLE && (CurrentY + 2*gui_font_height >= VRes)){
+				          if(Option.NoScroll && Option.DISPLAY_CONSOLE && (CurrentY + (2 + strlen(inpbuf)/Option.Width)*gui_font_height >= VRes)){
+				             ClearScreen(gui_bcolour);CurrentX=0;CurrentY=0;
+				             if(FindSubFun(( char *)"MM.PROMPT", 0) >= 0) {
+				            	 SerUSBPutS("\r");
+				                 ExecuteProgram(( char *)"MM.PROMPT\0");
+				             } else{
+				            	SerUSBPutS("\r");
+				                MMPrintString("> ");                           // print the prompt
+				             }
 
-			                   // Lets put the cursor at the beginning of where the command is displayed.
+				          }else{
 
-#ifdef USEBACKSPACE
-                                // backspace to the beginning of line
-                                //if(j > 0) {
-				                j=CharIndex;  //????????????????????????????????
-                                while(j)  {
-                                  // MMputchar('\b');
+			                  // Lets put the cursor at the beginning of where the command is displayed.
+                              // backspace to the beginning of line
+
+				              j=CharIndex;
+                              while(j)  {
                                   if (j==l4 || j==l3 ||j==l2 ){DisplayPutC('\b');SerUSBPutS("\e[1A");SerUSBPutS(goend);}else{ MMputchar('\b');}
                                   j--;
-                                }
-                                fflush(stdout);
-                                // MMCharPos=3;CurrentX=2*gui_font_width;
-                                MX470Display(CLEAR_TO_EOS);SerUSBPutS("\033[0J");        //Clear to End Of Screen
+                              }
+                              fflush(stdout);
+                              MX470Display(CLEAR_TO_EOS);SerUSBPutS("\033[0J");        //Clear to End Of Screen
+                         }
 
-
-#else
-                                 CurrentX=0;CurrentY=CurrentY-((CharIndex+1)/Option.Width * gui_font_height);
-                                 if (CharIndex>l4-1)SerUSBPutS("\e[3A");
-                                 else if (CharIndex>l3-1)SerUSBPutS("\e[2A");
-                                 else if(CharIndex>l2-1)SerUSBPutS("\e[1A");
-                                 SerUSBPutS("\r");
-                                 //CurrentX=0;SerUSBPutS("\r");
-                                 MX470Display(CLEAR_TO_EOS);
-                                 SerUSBPutS("\033[0J");
-        				         MMPrintString("> ");
-        				         fflush(stdout);
-
-
-#endif
-
-
-				            CharIndex = strlen(inpbuf);
-                            MMPrintString(inpbuf);                                          // display the line
-                            if(CharIndex==l4 || CharIndex==l3 || CharIndex==l2){SerUSBPutS(" ");SerUSBPutS("\b");}
-                            fflush(stdout);
-                            CharIndex = strlen(inpbuf);                                     // get the current cursor position in the line
-                            break;
+				         CharIndex = strlen(inpbuf);
+                         MMPrintString(inpbuf);                                          // display the line
+                         if(CharIndex==l4 || CharIndex==l3 || CharIndex==l2){SerUSBPutS(" ");SerUSBPutS("\b");}
+                         fflush(stdout);
+                         CharIndex = strlen(inpbuf);                                     // get the current cursor position in the line
+                         break;
 
 
                 /********************************************* Other Keys ********************************************************/
@@ -3113,9 +3134,7 @@ void EditInputLine(void) {
                                     MMPrintString(&inpbuf[CharIndex]);                      // display new part of the line
                                     CharIndex++;
                                     for(j = strlen(inpbuf); j > CharIndex; j--){
-                                       // MMputchar('\b');
                                         if (j==l4 || j==l3 || j==l2){DisplayPutC('\b');SerUSBPutS("\e[1A");SerUSBPutS(goend);}else{ MMputchar('\b');}
-
                                     }
                                     fflush(stdout);                                   // return the cursor to the right position
 
@@ -3127,6 +3146,20 @@ void EditInputLine(void) {
                                     if(j==l4-1 || j==l3-1 || j==l2-1){SerUSBPutS(" ");SerUSBPutS("\b");}
                                     fflush(stdout);
                                 }
+                                i = CharIndex;
+                                j = strlen((const char *)inpbuf);
+
+                                // If its going to scroll then clear screen
+                                if(Option.NoScroll && Option.DISPLAY_CONSOLE){
+                                   if(CurrentY + 2*gui_font_height >= VRes) {
+                                      ClearScreen(gui_bcolour);/*CurrentX=0*/;CurrentY=0;
+                                      CurrentX = (MMPromptPos-2)*gui_font_width  ;
+                                      DisplayPutC('>');
+                                      DisplayPutC(' ');
+                                      DisplayPutS((char *)inpbuf);                      // display the line
+
+                                    }
+                                }
 
                             }
                             break;
@@ -3134,8 +3167,7 @@ void EditInputLine(void) {
             for(i = 0; i < MAXKEYLEN + 1; i++) buf[i] = buf[i + 1];                             // shuffle down the buffer to get the next char
         } while(*buf);
         if(CharIndex == strlen(inpbuf)) {insert = false;}
-       // show(MMCharPos,0,"CharPOS");
-       // show(MMCharPos,2,"inpbuf");
+
     }
 
     saveline:
@@ -3144,7 +3176,7 @@ void EditInputLine(void) {
     if(strlen(inpbuf) < maxchars)InsertLastcmd(inpbuf);
 
 }
-//#endif
+
 
 
 #ifdef  USE_FULL_ASSERT

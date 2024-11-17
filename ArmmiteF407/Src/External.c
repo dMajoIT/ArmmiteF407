@@ -56,12 +56,14 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define DEFINE_PINDEF_TABLE
 
 int ExtCurrentConfig[NBR_PINS_MAXCHIP + 1];
-unsigned char ADCbits[55];
+//unsigned char ADCbits[55];  //was 55
+volatile unsigned char ADCbits[MAX_ANALOGUE_PIN_PACKAGE+1];
+
 volatile int INT1Count, INT1Value, INT1InitTimer, INT1Timer;
 volatile int INT2Count, INT2Value, INT2InitTimer, INT2Timer;
 volatile int INT3Count, INT3Value, INT3InitTimer, INT3Timer;
 volatile int INT4Count, INT4Value, INT4InitTimer, INT4Timer;
-volatile uint64_t INT5Count, INT5Value, INT5InitTimer, INT5Timer;
+//volatile uint64_t INT5Count, INT5Value, INT5InitTimer, INT5Timer;
 GPIO_InitTypeDef GPIO_InitDef, IR_InitDef;
 int InterruptUsed;
 extern TIM_HandleTypeDef htim2;
@@ -72,7 +74,7 @@ extern ADC_HandleTypeDef hadc2;
 extern ADC_HandleTypeDef hadc3;
 extern void MX_TIM8_Init(void);
 extern TIM_HandleTypeDef htim8;
-extern volatile uint64_t Count5High;
+//extern volatile uint64_t Count5High;
 extern void dacclose(void);
 extern void ADCclose(void);
 extern void CNInterrupt(void);
@@ -121,6 +123,7 @@ static void MX_TIM14_Init(int prescale)
   /* USER CODE END TIM14_Init 2 */
 
 }
+const MMFLOAT ADCdiv[13]={0,0,0,0,0,0,0,0,255.0,0,1023.0,0,4095.0,};
 int ADC_init(int32_t pin)
 {
 	int ADCinuse=1,resolution;
@@ -1756,6 +1759,13 @@ void ExtCfg(int pin, int cfg, int option) {
 	if(cfg == EXT_NOT_CONFIG) ExtSet(pin, 0);						// set the default output to low
 
 }
+
+// round a float to an integer
+unsigned short FloatToUint16(MMFLOAT x) {
+    if(x<0 || x > 3120 )
+        error("Number range");
+    return (x >= 0 ? (unsigned short)(x + 0.5) : (unsigned short)(x - 0.5)) ;
+}
 void __attribute__ ((optimize("-O2"))) bitstream(int pin, unsigned short *data, int num){
 	unsigned short now;
 	for(int i=0;i<num;i++){
@@ -1785,8 +1795,7 @@ void cmd_bitbang(void){
 	}
 	tp = checkstring(cmdline, "BITSTREAM");
 	if(tp) {
-		void *ptr1 = NULL;
-		int i,num;
+		int i,num,size;
 		uint32_t pin;
 		MMFLOAT *a1float=NULL;
 		int64_t *a1int=NULL;
@@ -1801,37 +1810,22 @@ void cmd_bitbang(void){
         if(IsInvalidPin(pin)) error("Invalid pin");
         if(!(ExtCurrentConfig[pin] == EXT_NOT_CONFIG || ExtCurrentConfig[pin] == EXT_DIG_OUT))  error("Pin | is in use",pin);
         ExtCfg(pin, EXT_DIG_OUT, 0);
-        ptr1 = findvar(argv[4], V_FIND | V_EMPTY_OK | V_NOFIND_ERR);
-        if(vartbl[VarIndex].type & T_NBR) {
-            if(vartbl[VarIndex].dims[1] != 0) error("Invalid variable");
-            if(vartbl[VarIndex].dims[0] <= 0) {		// Not an array
-                error("Argument 2 must be an array");
-            }
-            if((vartbl[VarIndex].dims[0] - OptionBase) < num-1)error("Array too small");
-            a1float = (MMFLOAT *)ptr1;
-        } else if(vartbl[VarIndex].type & T_INT) {
-            if(vartbl[VarIndex].dims[1] != 0) error("Invalid variable");
-            if(vartbl[VarIndex].dims[0] <= 0) {		// Not an array
-                error("Argument 2 must be an array");
-            }
-            if((vartbl[VarIndex].dims[0] - OptionBase) < num-1)error("Array too small");
-            a1int = (int64_t *)ptr1;
-        } else error("Argument 2 must be an array");
-        data=GetTempMemory(num * sizeof(unsigned int));
+        size=parsenumberarray(argv[4],&a1float, &a1int, 3, 1, NULL, false);
+        if(size < num)error("Array too small");
+        data=GetTempMemory(num * sizeof(unsigned short));
         if(a1float!=NULL){
-            for(i=0; i< num;i++)data[i]= FloatToInt32(*a1float++);
+        	if(*a1float <0 || *a1float>3120)error("Allowed number range (0-3120");
+            for(i=0; i< num;i++)data[i]= FloatToUint16(*a1float++ *21);
         } else {
-            for(i=0; i< num;i++){
-                data[i]= *a1int++ ;
-            }
+        	if(*a1int <0 || *a1int>3120)error("Allowed number range (0-3120)");
+            for(i=0; i< num;i++){data[i]= *a1int++ *21; }
         }
-        for(i=0; i< num;i++){
-            data[i]*=20;
-        }
-        data[0]-=2;
+        // if (data[0]>21) data[0]-=5;
+         data[0]-=2;
+         //MX_TIM14_Init(83); //1MHz i.e. 84/84
+         MX_TIM14_Init(3);  //21MHz  i.e. 84/4
         __disable_irq();
-        MX_TIM14_Init(3);
-    	HAL_TIM_Base_Start(&htim14);
+       	HAL_TIM_Base_Start(&htim14);
     	bitstream(pin,data,num);
         HAL_TIM_Base_Stop(&htim14);
         __enable_irq();

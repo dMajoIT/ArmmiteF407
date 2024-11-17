@@ -54,7 +54,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #else
 	#include "Hardware_Includes.h"
 #endif
-
+#define overlap (VRes % (FontTable[gui_font >> 4][1] * (gui_font & 0b1111)) ? 0 : 1)
 void flist(int, int, int);
 void clearprog(void);
 void execute_one_command(char *p);
@@ -63,7 +63,7 @@ void execute_one_command(char *p);
 extern volatile unsigned int ScrewUpTimer;
 extern jmp_buf jmprun;
 void ListNewLine(int *ListCnt, int all);
-
+extern void cleanend(void);
 
 struct sa_data datastore[MAXRESTORE];
 int restorepointer = 0;
@@ -331,6 +331,7 @@ void MIPS16 cmd_list(void) {
 	int i,j,k,m,x,step;
     if((p = checkstring(cmdline, "ALL"))) {
         if(!(*p == 0 || *p == '\'')) {
+        	if(Option.DISPLAY_CONSOLE && (SPIREAD  || Option.NoScroll)){ClearScreen(gui_bcolour);CurrentX=0;CurrentY=0;}
         	getargs(&p,1,",");
         	char *buff=GetTempMemory(STRINGSIZE
         			);
@@ -338,11 +339,14 @@ void MIPS16 cmd_list(void) {
     		if(strchr(buff, '.') == NULL) strcat(buff, ".bas");
             ListFile(buff, true);
         } else {
+        	if(Option.DISPLAY_CONSOLE && (SPIREAD  || Option.NoScroll)){ClearScreen(gui_bcolour);CurrentX=0;CurrentY=0;}
         	ListProgram((char *)ProgMemory, true);
         	checkend(p);
         }
     } else if((p = checkstring(cmdline, "COMMANDS"))) {
+    	int ListCnt = 1;
     	step=(Option.DISPLAY_CONSOLE ? HRes/gui_font_width/16 : 5);
+    	if(Option.DISPLAY_CONSOLE && (SPIREAD  || Option.NoScroll)){ClearScreen(gui_bcolour);CurrentX=0;CurrentY=0;}
     	m=0;x=8;
 		char** c=GetTempMemory((CommandTableSize+x)*sizeof(*c)+(CommandTableSize+x)*16);
 		for(i=0;i<CommandTableSize+x;i++){
@@ -368,7 +372,8 @@ void MIPS16 cmd_list(void) {
         			if(k!=(step-1))for(j=strlen(c[i+k]);j<15;j++)putConsole(' ');
         		}
     		}
-    		PRet();
+			if(Option.DISPLAY_CONSOLE)ListNewLine(&ListCnt, 0);
+    		else PRet();
     	}
 		MMPrintString("Total of ");PInt(m-1);MMPrintString(" commands\r\n");
 		if (checkstring(cmdline, "COMMANDS V")){
@@ -377,10 +382,12 @@ void MIPS16 cmd_list(void) {
 
     } else if((p = checkstring(cmdline, "FUNCTIONS"))) {
     	m=0;x=5;
+    	int ListCnt = 1;
     	step=(Option.DISPLAY_CONSOLE ? HRes/gui_font_width/16 : 5);
+    	if(Option.DISPLAY_CONSOLE && (SPIREAD  || Option.NoScroll)){ClearScreen(gui_bcolour);CurrentX=0;CurrentY=0;}
 		char** c=GetTempMemory((TokenTableSize+x)*sizeof(*c)+(TokenTableSize+x)*16);
 		for(i=0;i<TokenTableSize+x;i++){
-				c[m]= (char *)((int)c + sizeof(char *) * (TokenTableSize+3) + m*16);
+				c[m]= (char *)((int)c + sizeof(char *) * (TokenTableSize+x) + m*16);
 				if(m<TokenTableSize)strcpy(c[m],tokentbl[i].name);
 				else if(m==TokenTableSize)strcpy(c[m],"=>");
 				else if(m==TokenTableSize+1)strcpy(c[m],"=<");
@@ -397,7 +404,9 @@ void MIPS16 cmd_list(void) {
         			if(k!=(step-1))for(j=strlen(c[i+k]);j<15;j++)putConsole(' ');
         		}
     		}
-    		PRet();
+			if(Option.DISPLAY_CONSOLE)ListNewLine(&ListCnt, 0);
+    		else PRet();
+
     	}
 		MMPrintString("Total of ");PInt(m-1);MMPrintString(" functions and operators\r\n");
 		if (checkstring(cmdline, "FUNCTIONS V")){
@@ -406,19 +415,21 @@ void MIPS16 cmd_list(void) {
     } else {
 
     	if(!(*cmdline == 0 || *cmdline == '\'')) {
-    	        	getargs(&cmdline,1,",");
-    	        	char *buff=GetTempMemory(STRINGSIZE);
-    	        	strcpy(buff,getCstring(argv[0]));
-    	    		if(strchr(buff, '.') == NULL) strcat(buff, ".BAS");
-    				ListFile(buff, false);
+    		getargs(&cmdline,1,",");
+    	   	if(Option.DISPLAY_CONSOLE && (SPIREAD  || Option.NoScroll)){ClearScreen(gui_bcolour);CurrentX=0;CurrentY=0;}
+    	   	char *buff=GetTempMemory(STRINGSIZE);
+    	   	strcpy(buff,getCstring(argv[0]));
+    	   	if(strchr(buff, '.') == NULL) strcat(buff, ".BAS");
+    		ListFile(buff, false);
     	} else {
-    				ListProgram(ProgMemory, false);
-    				checkend(cmdline);
+    	   if(Option.DISPLAY_CONSOLE && (SPIREAD  || Option.NoScroll)){ClearScreen(gui_bcolour);CurrentX=0;CurrentY=0;}
+    	   ListProgram(ProgMemory, false);
+    	   checkend(cmdline);
     	}
     }
 }
 
-
+/*
 void MIPS16 ListNewLine(int *ListCnt, int all) {
 	PRet();
 	(*ListCnt)++;
@@ -428,6 +439,26 @@ void MIPS16 ListNewLine(int *ListCnt, int all) {
     	MMPrintString("\r                 \r");
     	*ListCnt = 1;
     }
+}
+*/
+void MIPS16 ListNewLine(int *ListCnt, int all) {
+	unsigned char noscroll=Option.NoScroll;
+	if(!all)Option.NoScroll=0;
+	MMPrintString("\r\n");
+	(*ListCnt)++;
+    if(!all && *ListCnt >= Option.Height-overlap) {
+		#ifdef USBKEYBOARD
+		clearrepeat();
+		#endif
+    	MMPrintString("PRESS ANY KEY ...");
+    	Option.NoScroll=noscroll;
+    	MMgetchar();
+    	Option.NoScroll=0;
+    	MMPrintString("\r                 \r");
+        if(Option.DISPLAY_CONSOLE){ClearScreen(gui_bcolour);CurrentX=0;CurrentY=0;}
+    	*ListCnt = 1;
+    }
+	Option.NoScroll=noscroll;
 }
 
 
@@ -727,7 +758,8 @@ void cmd_else(void) {
 
 void cmd_end(void) {
 	checkend(cmdline);
-	longjmp(mark, 1);												// jump back to the input prompt
+	//longjmp(mark, 1);												// jump back to the input prompt
+	cleanend();
 }
 
 
@@ -1505,8 +1537,8 @@ void MIPS16 cmd_read(void) {
 search_again:
     while(1) {
         if(*p == 0) p++;                                            // if it is at the end of an element skip the zero marker
-        if(*p == 0 || *p == 0xff) error("No DATA to read");         // end of the program and we still need more data
-        if(*p == T_NEWLINE) lineptr = p++;
+        if(*p == 0 /*|| *p == 0xff*/) error("No DATA to read");    // 2nd 0 so end of the program and we still need more data
+        if(*p == T_NEWLINE) lineptr = p++;                         // fix as per picomite if token 255 in use
         if(*p == T_LINENBR) p += 3;
         skipspace(p);
         if(*p == T_LABEL) {                                         // if there is a label here

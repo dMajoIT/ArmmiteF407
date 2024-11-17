@@ -548,6 +548,7 @@ void ResetAllOptions(void) {
    	Option.LCD_Reset = 0;
    	Option.LCD_CS = 0;
    	Option.FLASH_CS=35;    // 35 default or 77 for mini
+   	Option.NoScroll=0;    // Identify NO Scrolling for display
     Option.DISPLAY_CONSOLE = 0;
     Option.DefaultFont = 0x01;
     Option.DefaultFC = WHITE;
@@ -957,14 +958,14 @@ void MIPS16 cmd_library(void) {
 
 
     /**********************************************************************************************
-          LIBRARY CHECK will check for the existence of Library code at the end of program memory.
+          LIBRARY RESTORE will check for the existence of Library code at the end of program memory.
           Is existence is normally indicated by Option.ProgFlashSize which is set when the library
           code is saved. If library code is found AND the Winbond Flash library area is also not empty
           then Option.ProgFlashSize is set to the library's location.
           This would only be required after an OPTION RESET or when running without a battery,
           in which case the Options are set to default at every power on.
     ***********************************************************************************************/
-     if(checkstring(cmdline, "CHECK")) {  //See if library code exists and set Option.ProgFlashSize
+     if(checkstring(cmdline, "RESTORE")) {  //See if library code exists and set Option.ProgFlashSize
             	   if(Option.ProgFlashSize == PROG_FLASH_SIZE) { //Only if not already set
             		   p=ProgMemory;
             		   //Skip to end if program code

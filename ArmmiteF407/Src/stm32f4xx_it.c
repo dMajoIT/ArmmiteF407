@@ -78,7 +78,7 @@ extern ADC_HandleTypeDef hadc1;
 extern ADC_HandleTypeDef hadc2;
 extern ADC_HandleTypeDef hadc3;
 extern void Audio_Interrupt(void);
-extern volatile uint64_t Count5High;
+//extern volatile uint64_t Count5High;
 extern int64_t *d1point, *d2point;
 extern int d1max, d2max;
 extern volatile int d1pos, d2pos;
@@ -89,6 +89,7 @@ extern volatile int ADCchannelA;
 extern volatile int ADCchannelB;
 extern volatile int ADCchannelC;
 extern int ADCtriggervalue;
+extern int ADCtriggertimeout;
 extern int ADCtriggerchannel;
 extern int ADCnegativeslope;
 extern volatile int ADCcomplete;
@@ -526,7 +527,7 @@ void TIM6_DAC_IRQHandler(void)
 void TIM7_IRQHandler(void)
 {
   /* USER CODE BEGIN TIM7_IRQn 0 */
-	static int lastread, ADCtriggerfound;
+	static int lastread, ADCtriggerfound,timeout;
 	int c, c1=0, c2=0, c3=0;
 //	a=10000; while (HAL_IS_BIT_CLR(hadc1.Instance->SR, EOC_SINGLE_CONV) && a--);
 	HAL_ADC_PollForConversion(&hadc1, 10);
@@ -561,6 +562,7 @@ void TIM7_IRQHandler(void)
 		if(ADCpos==0){
 			ADCtriggerfound=0;
 			lastread=c;
+			timeout=ADCtriggertimeout;
 		} else if(!ADCtriggerfound){
 			if(ADCnegativeslope){ //if looking for down slope
 				if(lastread>=ADCtriggervalue && c<ADCtriggervalue){
@@ -584,6 +586,11 @@ void TIM7_IRQHandler(void)
 				}
 			}
 		}
+		//if(timeout>0){
+			timeout--;
+			if(timeout==0){ADCtriggerfound=1;}
+		//	if(timeout==0){ADCpos++;ADCtriggerfound=1;}
+		//}
 	}
 	ADCpos++;
 	TIM7->SR=0;

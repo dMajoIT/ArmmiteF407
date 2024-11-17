@@ -466,6 +466,7 @@ void MIPS16 InitDisplaySPI(int fullinit) {
         // B0 indicates ReadBuffer support, B1 is RGB565 two byte writes, B2 and B3 unused at present
         // Is set to 0 here and relevant attributes set in the driver initialisations
         LCDAttrib=0;
+
     }
 
     // the parameters for the display panel are set here
@@ -606,12 +607,22 @@ void MIPS16 InitDisplaySPI(int fullinit) {
     //if(Option.DISPLAY_TYPE == ILI9341 || Option.DISPLAY_TYPE == ILI9486 || Option.DISPLAY_TYPE == ILI9488 )ReadBuffer = ReadBufferSPI;
     if(LCDAttrib & 0x1){
     	ReadBuffer = ReadBufferSPI;
-    	ScrollLCD = ScrollLCDSPI;
+    	//if((Option.DISPLAY_TYPE == ILI9341 || Option.DISPLAY_TYPE == ILI9488 ) && !Option.SerialConDisabled && Option.DISPLAY_CONSOLE){
+    	// Option.NoScroll=1;
+    	//  ScrollLCD = ScrollLCDSPI;
+    	//}
     }
     //save the options
     SaveOptions();
     //reset display and clear screen
+    if(Option.DISPLAY_CONSOLE){
+    	SetFont(((Option.DefaultFont-1)<<4) | 1); // font 7 scale 1 is 0x61 ie. (7-1)<<4|1
+        PromptFont = gui_font;
+        PromptFC = gui_fcolour = Option.DefaultFC;
+        PromptBC = gui_bcolour = Option.DefaultBC;
+    } else{
     ResetDisplay();
+    }
     ClearScreen(gui_bcolour);
 }
 

@@ -51,7 +51,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 static unsigned int f1 = 0xFFFFFFFF, f2 = 0xFFFFFFFF, f3 = 0xFFFFFFFF; // a place to save the last used frequency
 char oc1, oc2, oc3, oc4, oc5, oc6, oc7, oc8, oc9;
-char s[20];
+//char s[20]; // Is this used?
+
 extern TIM_HandleTypeDef htim3;
 extern TIM_HandleTypeDef htim4;
 extern TIM_HandleTypeDef htim9;
@@ -74,6 +75,12 @@ void cmd_pwm(void) {
 		error("Invalid syntax");
 
 	channel = getint(argv[0], 1, 3) - 1;
+	if((canopen==1 || canopen==7) && channel==1){
+		if (argc > 5){
+		  CheckPin(CAN_1A_RX, CP_CHECKALL);  //Shared with PWM2B
+		  CheckPin(CAN_1A_TX, CP_CHECKALL);  //Shared with PWM2C
+		}
+	}
 
 	if (checkstring(argv[2], "STOP")) {
 		PWMClose(channel);
@@ -118,7 +125,8 @@ void cmd_pwm(void) {
 		do {
 			prescale++;
 			counts = round(
-					(MMFLOAT) SystemCoreClock / (MMFLOAT) 2.0 / (MMFLOAT) prescale
+					//(MMFLOAT) SystemCoreClock / (MMFLOAT) 2.0 / (MMFLOAT) prescale
+					(MMFLOAT) SystemCoreClock / (channel==2 ? (MMFLOAT) 1.0 : (MMFLOAT) 2.0) / (MMFLOAT) prescale
 							/ (MMFLOAT) f);
 		} while (counts > 65535);
 		counts--;
