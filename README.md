@@ -14,6 +14,58 @@ A user manual for MMBasic on the STM32F407 is under the docs directory.
 Change list from V5.07.00  
 
 V5.07.02b3:  
+Implements the new functions for parsing command parameters as used in the Picomite code.(i.e.MATH,LONGSTRING,ADC, commands). This has resulted in the freeing up of significant Flash, allowing some commands previously omitted to save space to be now included.
+
+CAN [OPEN|CLOSE|START|STOP|FILTER|SEND|READ] commands added  
+FSMC pins now available for MMBasic use if no parallel display configured.  
+MATH C_ADD etc commands that act on cells added as per picomites.  
+MATH SHIFT added  as per picomites  
+MATH WINDOW added as per picomites  
+MATH WINDOW fixed when input and output matrix are not the same type  
+MATH SD formula changed to Sample Standard Deviation as per Picomite  
+MEMORY PACK/UNPACK added.  
+LINE PLOT command added as per picomites  
+LINE GRAPH command added as per picomites  
+LINE command updated getargaddress() function from Picomite with fix for % in LINE  
+Fix for MATH M_MULT not  giving correct results.  
+Improved MATH M_MULT as per Pico RC5 (Added but not yet tested)  
+Improved MATH M_PRINT as per Pico RC5 (Added but not yet tested)  
+MATH command accepts either C_MUL or C_MULT. (as per Picomite)  
+Added MM.INFO(NBRPINS)  returns 100  
+Added MM.INFO(OPTION VCC) returns current value for   
+Updates to CommandLine Buffer as per Picomite.    
+BITBANG becomes DEVICE as per picomite latest release.    
+DEVICE BITSTREAM  
+DEVICE LCD  
+DEVICE HUMID   
+DEVICE WS2812  
+DEVICE BITSTREAM error in calculation fixed   
+LIBRARY CHECK becomes LIBRARY RESTORE is more closely match its function   
+Fix to allow no space after = in DIM i%=12345 as per picomite.   
+Fix to command READ not finding DATA statement if token 255 is in use.(as per picomites)  
+Fix for EXECUTE command in beta2 not having a timeout value.  
+Print datetime$(epoch(now)) no longer gives error.  
+Extend PEEK range to allow PEEK(VARADDR var) for non array integers and floats.   
+MEMORY command shows variables again.   
+MM.INFO(PINNO pin ) now returns correct value.  
+OPTION ANGLE now defaults to RADIANS after CNTRL C or END command.  
+COM4 TX and RX were partially reversed, A pullup on RX possibly not released when   
+COM4 closed . Now resolved.  
+ADC START now accepts additional parameters as per the Picomites that allow mapping of the the output data to a desired range.   
+ADC TRIGGER now allows a timeout value to be set. 'timeout' is the number of ADC samples to take before abandoning the wait for    
+the trigger condition. Setting a value equal to the frequency of the sampling would give a timeout of 1 second.  
+ADC TRIGGER,channel,level[,timeout]  
+Fix for freeze at command prompt after CNTRL C, ERROR , WATCHDOG if DAC was running.  
+Fix for incorrect frequency and pulse width generated on SERVO 3 command.  
+Fix for error when datetime$(epoch(now)) used.  
+Added ~ option to error() as per picomite and call it from getint() function  
+to allow correct error message format.   
+Improved scrolling for Editor and Console for non SSD1963 parallel displays:   
+ Editor rewrites in lieu of scrolling and  
+ OPTION LCDPANEL CONSOLE ,,,,,, NOSCROLL added for 16bit parallel non SSD displays  
+ to improve scrolling when used as a Console.  
+REMOVED - OPTION LCDPANEL CONSOLE support on SPI LCD PANELS  
+
 
 
 V5.07.02b2:  
