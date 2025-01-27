@@ -17,7 +17,6 @@ Change list from V5.07.00
 V5.07.02b4:  
 An alternate ARMmiteF407PC13Reset.bin is provided to move the testing for an MMBasic Reset off PE4 (K1) and also the testing for Option Serial Console off PE3(K0).  
 Pin PC13 is now used to trigger these events. This allows PE4 and PE3 to be used without risking an unintended MMBasic Reset or switch to Serial Console.  
-
 LCDPANEL ILI9341_I removed.  
 OPTION LCDPANEL accepts [,INVERT] to invert colours on ILI9341 and ILI9488  
 In the commandline editor the automatic OVR mode on right arrow removed to lineup with the Picomites.  
