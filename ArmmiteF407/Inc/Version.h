@@ -4,7 +4,7 @@ MMBasic  for STM32F407VET6 (Armmite F4)
 
 Version.h
 
-Copyright 2011-2023 Geoff Graham and  Peter Mather.
+Copyright 2011-2025 Geoff Graham and  Peter Mather.
 
 Redistribution and use in source and binary forms, with or without
 modification, are permitted provided that the following conditions are met:
@@ -44,10 +44,10 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 //#define DEBUGMODE
 
-#define VERSION         "5.07.02b3"
+#define VERSION         "5.07.02b4"
 #define MES_SIGNON  "ARMmite MMBasic Version " VERSION
-#define YEAR		"2011-2024"			    // and the year
-#define YEAR2          "2016-2024"
+#define YEAR		"2011-2025"			    // and the year
+#define YEAR2       "2016-2025"
 #define COPYRIGHT  "\r\nCopyright " YEAR " Geoff Graham\r\nCopyright " YEAR2 " Peter Mather\r\n"
 
 // Beta 2 SPIClose() added before AppendLibrary incase left open by flash write fail

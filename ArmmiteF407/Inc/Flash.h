@@ -111,7 +111,7 @@ struct option_s {
     char Refresh;
     unsigned char FLASH_CS;
     unsigned char NoScroll;         //NoScroll from picomites added @beta3
-    char dummy[1];        //27
+    unsigned char dummy;        //27
     short MaxCtrls;       //28        2  // maximum number of controls allowed
     short RTC_Calibrate;  //32  (30)bytes  2
     int DISPLAY_WIDTH;    //36  (32)      4
