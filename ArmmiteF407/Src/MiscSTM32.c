@@ -73,7 +73,7 @@ extern SRAM_HandleTypeDef hsram1;
 char *LCDList[] = {"","VGA","SSD1963_5ER_16", "SSD1963_7ER_16",  //0-3
 		"SSD1963_4_16", "SSD1963_5_16", "SSD1963_5A_16", "SSD1963_7_16", "SSD1963_7A_16", "SSD1963_8_16",  //4-9 SSD P16 displays
 		"USER",//10
-		"ST7735","ILI9431_I","ST7735S","","ILI9481IPS","ILI9163", "GC9A01", "ST7789","ILI9488", "ILI9481", "ILI9341", "",      //11-22 SPI
+		"ST7735","","ST7735S","","ILI9481IPS","ILI9163", "GC9A01", "ST7789","ILI9488", "ILI9481", "ILI9341", "",      //11-22 SPI
 		  "ILI9341_16", "ILI9486_16", "", "IPS_4_16", ""    //23-27 P16 displays
 		 };
 const char *OrientList[] = {"", "LANDSCAPE", "PORTRAIT", "RLANDSCAPE", "RPORTRAIT"};

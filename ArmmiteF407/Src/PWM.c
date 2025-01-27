@@ -75,7 +75,7 @@ void cmd_pwm(void) {
 		error("Invalid syntax");
 
 	channel = getint(argv[0], 1, 3) - 1;
-	if((canopen==1 || canopen==7) && channel==1){
+	if((canopen==1 ) && channel==1){
 		if (argc > 5){
 		  CheckPin(CAN_1A_RX, CP_CHECKALL);  //Shared with PWM2B
 		  CheckPin(CAN_1A_TX, CP_CHECKALL);  //Shared with PWM2C

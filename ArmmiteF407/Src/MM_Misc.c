@@ -660,25 +660,58 @@ void MIPS16 cmd_longString(void){
         }
         return;
     }
+    /*
+    tp = checkstring(cmdline, (char *)"PRINT");
+    if(tp){
+           int64_t *dest=NULL;
+           char *q=NULL;
+           int j, fnbr=0;
+           int docrlf;											// this is used to suppress the cr/lf if needed
+           getargs(&tp, 5, ";,");				                 // this is a macro and must be the
+           //getargs(&tp, 3, (char *)",");
+           docrlf = true;
+           if((argc == 2) && (*argv[1]==';'))docrlf = false;
+           if((argc == 4) && (*argv[3]==';'))docrlf = false;
+           if(argc >= 3){
+               if(*argv[0] == '#')argv[0]++;                                 // check if the first arg is a file number
+               fnbr = getinteger(argv[0]);                                 // get the number
+               parseintegerarray(argv[2],&dest,2,1,NULL,true);
+           } else {
+               parseintegerarray(argv[0],&dest,1,1,NULL,true);
+           }
+           q=(char *)&dest[1];
+           j=dest[0];
+           while(j--){
+               MMfputc(*q++, fnbr);
+           }
+           if(docrlf)MMfputs((char *)"\2\r\n", fnbr);
+           return;
+    }
+    */
+
     tp = checkstring(cmdline, (char *)"PRINT");
     if(tp){
         int64_t *dest=NULL;
         char *q=NULL;
         int j, fnbr=0;
-        getargs(&tp, 3, (char *)",");
-        if(argc == 3){
+        int docrlf=true;
+        getargs(&tp, 5, ",;");
+        if(argc==5)error("Syntax");
+        if(argc >= 3){
             if(*argv[0] == '#')argv[0]++;                                 // check if the first arg is a file number
             fnbr = getinteger(argv[0]);                                 // get the number
             parseintegerarray(argv[2],&dest,2,1,NULL,true);
+            if(*argv[3]==';')docrlf=false;
         } else {
             parseintegerarray(argv[0],&dest,1,1,NULL,true);
-        }
+            if(*argv[1]==';')docrlf=false;
+         }
         q=(char *)&dest[1];
         j=dest[0];
         while(j--){
             MMfputc(*q++, fnbr);
         }
-        MMfputs((char *)"\2\r\n", fnbr);
+        if(docrlf)MMfputs(( char *)"\2\r\n", fnbr);
         return;
     }
     tp = checkstring(cmdline, (char *)"LCASE");
@@ -1263,7 +1296,7 @@ void cmd_option(void) {
             if(argc >= 1) Option.Height = getint(argv[0], 5, 100);
             if(argc == 3) Option.Width = getint(argv[2], 37, 240);
             if (Option.DISPLAY_CONSOLE) {
-               setterminal((Option.Height > SCREENHEIGHT)?Option.Height:SCREENHEIGHT,(Option.Width > SCREENWIDTH)?Option.Width:SCREENWIDTH);                                                    // or height is > 24
+               setterminal((Option.Height > SCREENHEIGHT)?Option.Height:SCREENHEIGHT,(Option.Width > SCREENWIDTH)?Option.Width:SCREENWIDTH);     // or height is > 24
             }else{
               setterminal(Option.Height,Option.Width);
             }
@@ -2171,12 +2204,11 @@ void MIPS16 CrunchData(char **p, int c) {
 
 
 
+
+
 void MIPS16 cmd_autosave(void) {
     char *buf, *p;
-    int c, prevc = 0, crunch = false;
-   // int count = 0;
-   // uint64_t timeout;
-
+    int c, prevc = 0, crunch = false,append = false;
     if(CurrentLinePtr) error("Invalid in a program");
     char *tp=(char *)checkstring(cmdline,( char *)"APPEND");
     if(tp){
@@ -2186,7 +2218,8 @@ void MIPS16 cmd_autosave(void) {
         CloseAllFiles();
         ClearExternalIO();                                              // this MUST come before InitHeap()
 
-        p = buf = GetMemory(EDIT_BUFFER_SIZE);
+       // p = buf = GetMemory(EDIT_BUFFER_SIZE);
+        p = buf = GetTempMemory(EDIT_BUFFER_SIZE);
         char * fromp  = (char *)ProgMemory;
         p = buf;
         while(*fromp != 0xff) {
@@ -2198,6 +2231,7 @@ void MIPS16 cmd_autosave(void) {
             // finally, is it the end of the program?
             if(fromp[0] == 0 || fromp[0] == 0xff) break;
         }
+        append=true;
         goto readin;
     }
     if(*cmdline) {
@@ -2207,18 +2241,18 @@ void MIPS16 cmd_autosave(void) {
             error("Unknown command");
     }
 
-    ClearProgram();                                                 // clear any leftovers from the previous program
+    ClearProgram();                                            // clear any leftovers from the previous program
     p = buf = GetTempMemory(EDIT_BUFFER_SIZE);
-    CrunchData(&p, 0);                                              // initialise the crunch data subroutine
-    //while((c = (getConsole() & 0x7f)) != 0x1a) {                    // while waiting for the end of text char
+    CrunchData(&p, 0);                                         // initialise the crunch data subroutine
+
 readin:
-    while((c = MMInkey()) != 0x1a && c!=F1 && c!=F2) {                    // while waiting for the end of text char
-    	//if (c == -1 && count && time_us_64() - timeout > 100000)
-    	//{
-       //   fflush(stdout);
-        //  count = 0;
-       // }
-       	if(p == buf && c == '\n') continue;                         // throw away an initial line feed which can follow the command
+    while((c = MMInkey()) != 0x1a && c!=F1 && c!=F2) {         // while waiting for the end of text char
+        if(append){
+        	append=false;
+        	if( c == '\n') continue;                  // throw away an initial line feed which can follow the command
+        }else{
+       	  if(p == buf && c == '\n') continue;         // throw away an initial line feed which can follow the command
+        }
         if((p - buf) >= EDIT_BUFFER_SIZE) error("Not enough memory");
         if(IsPrint(c) || c == '\r' || c == '\n' || c == TAB) {
             if(c == TAB) c = ' ';
@@ -2237,14 +2271,17 @@ readin:
     while(getConsole() != -1);                                      // clear any rubbish in the input
 //    ClearSavedVars();                                               // clear any saved variables
     SaveProgramToFlash(buf, true);
+    ClearVars(0);
     if(c==F2){
-        ClearVars(0);
+        //ClearVars(0);
         strcpy(inpbuf,"RUN\r\n");
         multi=false;
         tokenise(true);                                             // turn into executable code
         ExecuteProgram(tknbuf);                                     // execute the line straight away
     }
 }
+
+
 
 
 

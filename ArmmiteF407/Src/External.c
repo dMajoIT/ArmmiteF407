@@ -1776,7 +1776,7 @@ void __attribute__ ((optimize("-O2"))) bitstream(int pin, unsigned short *data, 
 	}
 
 }
-void cmd_bitbang(void){
+void cmd_device(void){
 	char *tp;
 	tp = checkstring(cmdline, "WS2812");
 	if(tp) {

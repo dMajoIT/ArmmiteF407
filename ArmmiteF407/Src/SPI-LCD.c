@@ -56,6 +56,7 @@ void DefineRegionSPI(int xstart, int ystart, int xend, int yend, int rw);
 void DrawBitmapSPI(int x1, int y1, int width, int height, int scale, int fc, int bc, unsigned char *bitmap);
 int CurrentSPISpeed=NONE_SPI_SPEED;
 extern char LCDAttrib;
+extern char LCDInvert;
 extern SPI_HandleTypeDef GenSPI;
 #define SPIsend(a) {uint8_t b=a;HAL_SPI_Transmit(&GenSPI,&b,1,500);}
 #define SPIqueue(a) {HAL_SPI_Transmit(&GenSPI,a,2,500);}
@@ -98,8 +99,8 @@ void MIPS16 ConfigDisplaySPI(char *p) {
 
     if(checkstring(argv[0], "ILI9341")) {
         DISPLAY_TYPE = ILI9341;
-    } else if(checkstring(argv[0], "ILI9341_I")) {
-    	DISPLAY_TYPE = ILI9341_I;
+   // } else if(checkstring(argv[0], "ILI9341_I")) {
+   // 	DISPLAY_TYPE = ILI9341_I;
     } else if(checkstring(argv[0], "ILI9481")) {
     	DISPLAY_TYPE = ILI9481;
     } else if(checkstring(argv[0], "ILI9481IPS")) {
@@ -524,13 +525,12 @@ void MIPS16 InitDisplaySPI(int fullinit) {
                         break;
 
          case ILI9341:
-         case ILI9341_I:
-        	   LCDAttrib=3;  //B0=ReadBuffer B1=RGB565
+           	   LCDAttrib=3;  //B0=ReadBuffer B1=RGB565
 		       DisplayHRes = 320;
 		       DisplayVRes = 240;
 		       ResetController();
      	       SendCommandBlock(ILI9341Init1);  //send the block of commands
-     	       if (Option.DISPLAY_TYPE==ILI9341_I)spi_write_cd(ILI9341_INVERTON,1,0);
+     	       if (LCDInvert)spi_write_cd(ILI9341_INVERTON,1,0);
      	       SendCommandBlock(ILI9341Init2);  //send the block of commands
 
 		       break;

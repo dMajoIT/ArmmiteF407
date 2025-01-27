@@ -222,6 +222,27 @@ static uint32_t reverse32(uint32_t in)
 }
 
 ///////////////////////////////////////////////////////////////////////////////////
+/*MIT License
+
+Copyright (c) 2021-2024 Rob Tillaart
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.*/
 
 // CRC POLYNOME = x8 + x5 + x4 + 1 = 1001 1000 = 0x8C
 uint8_t crc8(uint8_t *array, uint16_t length, const uint8_t polynome, 
@@ -757,6 +778,33 @@ void cmd_math(void){
 			*a3float = a[0]*b[1] - a[1]*b[0];
 			return;
 		}
+		/* [Hex] option added */
+		if((tp = checkstring(cmdline, ( char *)"V_PRINT"))){
+			int j, numcols=0;
+			MMFLOAT *a1float=NULL;
+			int64_t *a1int=NULL;
+			getargs(&tp, 3,",");
+			if(!(argc == 1 || argc==3)) error("Argument count");
+			numcols=parsenumberarray(argv[0],&a1float,&a1int,1,1, dims, false);
+			if(a1float!=NULL){
+				if(argc==3)error("Trying to print a float in HEX");
+				PFlt(*a1float++);
+				for(j=1;j<numcols;j++)PFltComma(*a1float++);
+				PRet();
+			} else {
+				if(checkstring(argv[2],"HEX")){
+					PIntH(*a1int++);
+					for(j=1;j<numcols;j++)PIntHC(*a1int++);
+					PRet();
+				} else {
+					PInt(*a1int++);
+					for(j=1;j<numcols;j++)PIntComma(*a1int++);
+					PRet();
+				}
+			}
+			return;
+		}
+		/*
 		tp = checkstring(cmdline, ( char *)"V_PRINT");
 		if(tp) {
 			int j, numcols=0;
@@ -776,6 +824,7 @@ void cmd_math(void){
 			}
 			return;
 		}
+	   */
 	} else if(toupper(*cmdline)=='M') {
 		tp = checkstring(cmdline, ( char *)"M_INVERSE");
 		if(tp){

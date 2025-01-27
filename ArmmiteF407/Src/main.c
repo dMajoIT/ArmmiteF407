@@ -153,6 +153,7 @@ int ListCnt;
 int MMCharPos;
 int MMPromptPos;
 char LCDAttrib;
+char LCDInvert;
 volatile int MMAbort = false;
 int use_uart;
 
@@ -513,7 +514,7 @@ int main(void)
 	!(Option.SerialConDisabled==0 || Option.SerialConDisabled==1)
   	  ){
 	  // ResetAllFlash();   // init the options if this is the very first startup
-	  ResetAllBackupRam();  // We don't need/want to clear Program Memory so just clear saved vars and reset options in the battery Backup Ram
+	  ResetAllBackupRam();  // We don't want to clear Program Memory so just clear saved vars and reset options in the battery Backup Ram
 	  _excep_code=0;
   }
   SerialConDisabled=Option.SerialConDisabled;
@@ -566,6 +567,7 @@ int main(void)
   /* USER CODE BEGIN 2 */
   skip_init:
   	MX_GPIO_Init();
+#ifndef PC13RESET
  	{
   		GPIO_InitTypeDef GPIO_InitStruct;
   		GPIO_InitStruct.Pin = KEY0_Pin;
@@ -597,6 +599,42 @@ int main(void)
   		GPIO_InitStruct.Pull = GPIO_NOPULL;
   		HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
  	}
+#else
+ 	{   //Check if Serial Console Required i.e. VCC on PC13  K0_Alt
+ 	  		GPIO_InitTypeDef GPIO_InitStruct;
+ 	  		GPIO_InitStruct.Pin = GPIO_PIN_13;
+ 	  		GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+ 	  		GPIO_InitStruct.Pull = GPIO_PULLDOWN;
+ 	  		HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+ 	  		HAL_Delay(200);
+ 	  		if(HAL_GPIO_ReadPin(GPIOC,  GPIO_PIN_13) && Option.SerialConDisabled){
+ 	  			Option.SerialConDisabled=0;
+ 	  			SaveOptions();
+ 	  		    SoftReset();                                                // this will restart the processor
+ 	  		}
+ 	  		GPIO_InitStruct.Pin = GPIO_PIN_13;
+ 	  		GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
+ 	  		GPIO_InitStruct.Pull = GPIO_NOPULL;
+ 	  		HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+ 	}
+ 	{  //Check for MMBasic Reset i.e. GND of PC13  K1_Alt
+ 	  		GPIO_InitTypeDef GPIO_InitStruct;
+ 	  		GPIO_InitStruct.Pin = GPIO_PIN_13;
+ 	  		GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+ 	  		GPIO_InitStruct.Pull = GPIO_PULLUP;
+ 	  		HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+ 	  		HAL_Delay(200);
+ 	  		if(!HAL_GPIO_ReadPin(GPIOC,  GPIO_PIN_13)){
+ 	  			//FlashWriteInit(PROGRAM_FLASH);    //This is included in ResetAllFlash() so is not required here
+ 	  			ResetAllFlash();
+ 	  		}
+ 	  		GPIO_InitStruct.Pin = GPIO_PIN_13;
+ 	  		GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
+ 	  		GPIO_InitStruct.Pull = GPIO_NOPULL;
+ 	  		HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+ 	}
+
+#endif
    	HAL_SRAM_DeInit(&hsram1);
  	MX_DAC_Init();
   	MX_RNG_Init();
@@ -663,6 +701,9 @@ int main(void)
     if(!(_excep_code == RESTART_NOAUTORUN || _excep_code == RESET_COMMAND || _excep_code == WATCHDOG_TIMEOUT || _excep_code == SCREWUP_TIMEOUT || _excep_code == RESTART_HEAP)){
   	  if(Option.Autorun==0 ){
   		  MMPrintString(MES_SIGNON); //MMPrintString(b);              // print sign on message
+#ifdef PC13RESET
+  		 MMPrintString(" (PC13 Reset)");
+#endif
   		  MMPrintString(COPYRIGHT);                                   // print copyright message
   		  PRet();
   	  }
@@ -2343,6 +2384,11 @@ The vt100 escape code sequences
                         F12         esc [ 2 4 ~
 
                         SHIFT-F3    esc [ 2 5 ~         used in the editor
+                        SHIFT-F4    esc [ 2 6 ~
+                        SHIFT-F5    esc [ 2 8 ~
+                        SHIFT-F6    esc [ 2 9 ~
+                        SHIFT-F7    esc [ 3 1 ~
+                        SHIFT-F8    esc [ 3 2 ~
 
 *****************************************************************************************/
 
@@ -2406,8 +2452,13 @@ int MMInkey(void) {
             if(c == '2') {
                 if(tc =='0' || tc == '1') return F9 + (tc - '0');   // F9 and F10
                 if(tc =='3' || tc == '4') return F11 + (tc - '3');  // F11 and F12
-                if(tc =='5') return F3 + 0x20;                      // SHIFT-F3
+                if(tc =='5' || tc=='6') return F3 + 0x20 + tc-'5';   // SHIFT-F3 and F4
+                if(tc =='8' || tc=='9') return F5 + 0x20 + tc-'8';   // SHIFT-F5 and F6
             }
+            if(c == '3') {
+                if(tc >='1' && tc <= '4') return F7 + 0x20 + (tc - '1');   // SHIFT-F7 to F10
+            }
+              //NB: SHIFT F1, F2,F9,F10, F11 and F12 don't appear to generate anything
         }
         // nothing worked so bomb out
         c1 = '['; c2 = c; c3 = tc; c4 = ttc;
@@ -2942,7 +2993,7 @@ void EditInputLine(void) {
                         CharIndex++;
                       }
 
-                      insert=false; //right always switches to OVER
+                      //insert=false; //right always switches to OVER
                       break;
 
                 /*********************************************DEL ********************************************************/

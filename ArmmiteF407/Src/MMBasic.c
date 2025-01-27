@@ -916,7 +916,7 @@ void MIPS16 str_replace(char *target, const char *needle, const char *replacemen
     // write altered string back to target
     strcpy(target, buffer);
 }
-
+/*
 void MIPS16 STR_REPLACE(char *target, const char *needle, const char *replacement){
 	char *ip=target;
 	int toggle=0;
@@ -951,6 +951,60 @@ void MIPS16 STR_REPLACE(char *target, const char *needle, const char *replacemen
 	}
 
 }
+*/
+//Fix to prevent replacement in comments as per Picomites
+void  MIPS16 STR_REPLACE(char *target, const char *needle, const char *replacement){
+	char *ip=target;
+	int toggle=0;
+    char comment[STRINGSIZE]={0};
+    skipspace(ip);
+    if(!(toupper(*ip)=='R' && toupper(ip[1])=='E' && toupper(ip[2])=='M' )){
+        while(*ip){
+            if(*ip==34){
+                if(toggle==0)toggle=1;
+                else toggle=0;
+            }
+            if(toggle && *ip==' '){
+                *ip=0xFF;
+            }
+            if(toggle && *ip=='.'){
+                *ip=0xFE;
+            }
+            if(toggle && *ip=='='){
+                *ip=0xFD;
+            }
+            //future proof for BASE$ function combining HEX$,OCT$,BIN$
+            if(toggle && *ip=='('){   //exclude "HEX$(.." replacements in a string
+            	*ip=0xFC;
+            }
+            if(toggle && *ip=='\\'){
+                 *ip=0xFB;
+            }
+
+            if(toggle==0 && *ip=='\''){
+                strcpy(comment,ip);
+                *ip=0;
+                break;
+            }
+            ip++;
+        }
+        str_replace(target, needle, replacement);
+        ip=target;
+        if(comment[0]=='\''){
+        	strcat(target,comment);
+        }
+        while(*ip){
+            if(*ip==0xFF)*ip=' ';
+            if(*ip==0xFE)*ip='.';
+            if(*ip==0xFD)*ip='=';
+            if(*ip==0xFC)*ip='(';
+            if(*ip==0xFB)*ip='\\';
+            ip++;
+        }
+    }
+
+}
+
 
 /********************************************************************************************************************************************
  take an input line and turn it into a line with tokens suitable for saving into memory
@@ -988,13 +1042,13 @@ void MIPS16 tokenise(int console) {
     //STR_REPLACE(inpbuf,"PAGE ","GUI PAGE ");
     //STR_REPLACE(inpbuf,"GUI PAGE\370","GUI PAGE ");
     //Prevent recursive replacement of LCD
-    STR_REPLACE(inpbuf,"BITBANG LCD ","BITBANG LCD\370");
-    STR_REPLACE(inpbuf,"LCD ","BITBANG LCD ");
-    STR_REPLACE(inpbuf,"BITBANG LCD\370","BITBANG LCD ");
+    STR_REPLACE(inpbuf,"DEVICE LCD ","DEVICE LCD\370");
+    STR_REPLACE(inpbuf,"LCD ","DEVICE LCD ");
+    STR_REPLACE(inpbuf,"DEVICE LCD\370","DEVICE LCD ");  // \370 is 0xF8
     //Prevent recursive replacement of HUMID
-    STR_REPLACE(inpbuf,"BITBANG HUMID ","BITBANG HUMID\370");
-    STR_REPLACE(inpbuf,"HUMID ","BITBANG HUMID ");
-    STR_REPLACE(inpbuf,"BITBANG HUMID\370","BITBANG HUMID ");
+    STR_REPLACE(inpbuf,"DEVICE HUMID ","DEVICE HUMID\370");
+    STR_REPLACE(inpbuf,"HUMID ","DEVICE HUMID ");
+    STR_REPLACE(inpbuf,"DEVICE HUMID\370","DEVICE HUMID ");
 
     // setup the input and output buffers
     p = inpbuf;
