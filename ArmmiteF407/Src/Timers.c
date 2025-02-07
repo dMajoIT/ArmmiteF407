@@ -98,6 +98,8 @@ extern char ConsoleTxBuf[CONSOLE_TX_BUF_SIZE];
 extern USBD_HandleTypeDef hUsbDeviceFS;
 extern void cleanend(void);
 extern void dacclose(void);
+//extern unsigned int _restart_reason;//  __attribute__ ((persistent));  // and this is the address
+//extern unsigned int _excep_code;
 
 /***************************************************************************************************
 InitTimers
@@ -164,7 +166,7 @@ if(processtick){
 	if(WDTimer) {
     	if(--WDTimer == 0) {
             _excep_code = WATCHDOG_TIMEOUT;
-            SoftReset();                                            // crude way of implementing a watchdog timer.
+             SoftReset();                                            // crude way of implementing a watchdog timer.
         }
     }
 //#ifdef CMD_EXECUTE

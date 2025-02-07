@@ -144,6 +144,7 @@ unsigned int mmap[128];
 ************************************************************************************************************************/
 void MIPS16 cmd_memory(void) {
 	char *p,*tp;
+#ifdef VGT
     tp = checkstring(cmdline, (char *)"PACK");
     if(tp){
         getargs(&tp,7,(char *)",");
@@ -311,6 +312,7 @@ void MIPS16 cmd_memory(void) {
         }
         return;
     }
+#endif
     tp = checkstring(cmdline, (char *)"COPY");
     if(tp){
     	if((p = checkstring(tp, (char *)"INTEGER"))) {

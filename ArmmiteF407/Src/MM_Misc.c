@@ -113,7 +113,8 @@ int SaveOptionErrorSkip=0;
 int SaveMMerrno;           // save the error number
 char SaveMMErrMsg[MAXERRMSG];  // save the error message
 
-
+//extern unsigned int _excep_code;//  __attribute__ ((persistent));  // if there was an exception this is the exception code
+//extern unsigned int _restart_reason;//  __attribute__ ((persistent));  // if there was an exception this is the exception code
 
 void integersort(int64_t *iarray, int n, long long *index, int flags, int startpoint){
     int i, j = n, s = 1;
@@ -1522,6 +1523,7 @@ void fun_info(void){
          return;
       }
 
+/*
       tp=checkstring(ep, "PINNO");
          if(tp){
              int pin;
@@ -1535,6 +1537,31 @@ void fun_info(void){
              targ=T_INT;
              return;
       }
+ */
+      tp=checkstring(ep, "PINNO");
+      if(tp){
+      	 int pin;
+        	 MMFLOAT f;
+        	 long long int i64;
+          char *ss;
+        	 int t=0;
+        	 char code, *ptr;
+        	 char *string=GetTempMemory(STRINGSIZE);
+        	 skipspace(tp);
+        	 evaluate(tp, &f, &i64, &ss, &t, false);
+          if(t & T_STR ){
+             ptr=(char *)getCstring(tp);
+             strcpy(string,ptr);
+           } else {
+             strcpy(string,(char *)tp);
+           }
+           if((code=codecheck( ( char *)string)))string+=2;
+           pin = getinteger((char *)string);
+           if(code)pin=codemap(code,pin);
+           if(IsInvalidPin(pin))error("Invalid pin");
+           targ=T_INT;
+           return;
+       }
 
 
      if(checkstring(ep, "CPUSPEED")){
@@ -1676,6 +1703,16 @@ void fun_info(void){
                 iret=(int64_t)((uint32_t)varcnt);
                 targ=T_INT;
                 return;
+     } else if(checkstring(ep, "BOOT")){
+    	 if(_restart_reason == 0x0)strcpy((char *)sret, "Power On");
+    	 else if(_restart_reason == 0x1)strcpy((char *)sret, "Reset Switch");
+    	 else if(_restart_reason == 0x2)strcpy((char *)sret, "MMBasic Reset");
+    	 else if(_restart_reason == 0x3)strcpy((char *)sret, "CPU RESTART");
+    	 else if(_restart_reason == 0x4)strcpy((char *)sret, "Watchdog");
+    	 else if(_restart_reason == 0x5)strcpy((char *)sret, "EXECUTE Timeout");
+    	 else if(_restart_reason == 0x6)strcpy((char *)sret, "HEAP Restart");
+    	 else strcpy((char *)sret, "Unknown");
+
 
 
       } else error("Syntax");
@@ -1764,7 +1801,7 @@ void MIPS16 cmd_cpu(void) {
     if((p = checkstring(cmdline, "RESTART"))) {
         PRet();
         _excep_code = RESET_COMMAND;
-        while(ConsoleTxBufTail != ConsoleTxBufHead);
+         while(ConsoleTxBufTail != ConsoleTxBufHead);
         uSec(10000);
         SoftReset();                                                // this will restart the processor ? only works when not in debug
     } else if((p = checkstring(cmdline, "SLEEP"))) {
@@ -2535,7 +2572,7 @@ void *mymalloc(size_t size){
 	if((uint32_t)a+size>heaptop)heaptop=(uint32_t)a+size;
 	if(heaptop+0x100 > __get_MSP()) {
 	    _excep_code = RESTART_HEAP;                            // otherwise do an automatic reset
-		uSec(10000);
+	   	uSec(10000);
 	    SoftReset();                                                // this will restart the processor
 	}
 	return a;

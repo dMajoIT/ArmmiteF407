@@ -66,7 +66,7 @@ extern RTC_HandleTypeDef hrtc;
 extern TIM_HandleTypeDef htim1;
 extern void  setterminal(int height,int width);
 extern SRAM_HandleTypeDef hsram1;
-
+//extern unsigned int _excep_code;
 
 ///////////////////////////////////////////////////////////////////////////////////////////////
 // constants and functions used in the OPTION LIST command

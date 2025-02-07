@@ -203,11 +203,13 @@ static uint16_t reverse16(uint16_t in)
   return x;
 }
 
-
+/*
 static uint16_t reverse12(uint16_t in)
 {
   return reverse16(in) >> 4;
 }
+
+*/
 
 
 static uint32_t reverse32(uint32_t in)
@@ -273,7 +275,7 @@ uint8_t crc8(uint8_t *array, uint16_t length, const uint8_t polynome,
   return crc;
 }
 
-
+/*
 // CRC POLYNOME = x12 + x3 + x2 + 1 =  0000 1000 0000 1101 = 0x80D
 uint16_t crc12(const uint8_t *array, uint16_t length, const uint16_t polynome,
                const uint16_t startmask, const uint16_t endmask, 
@@ -304,7 +306,7 @@ uint16_t crc12(const uint8_t *array, uint16_t length, const uint16_t polynome,
   crc ^= endmask;
   return crc;
 }
-
+*/
 
 // CRC POLYNOME = x15 + 1 =  1000 0000 0000 0001 = 0x8001
 uint16_t crc16(const uint8_t *array, uint16_t length, const uint16_t polynome,

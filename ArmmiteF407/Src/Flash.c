@@ -526,6 +526,7 @@ void LoadOptions(void) {
 // reset the options to their defaults
 // used on initial firmware run or if options are corrupt
 void ResetAllOptions(void) {
+
     Option.Height = SCREENHEIGHT;
     Option.Width = SCREENWIDTH;
     Option.PIN = 0;
