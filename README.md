@@ -13,7 +13,6 @@ A user manual for MMBasic on the STM32F407 is under the docs directory.
 
 Change list from V5.07.00  
 
-
 V5.07.02b4:  
 An alternate firmware ARMmiteF407PC13Reset.bin is provided to move the testing for an MMBasic Reset off PE3 (K1)     
 and also the testing for Option Serial Console off PE4(K0). Pin PC13 is now used to trigger these events.   
