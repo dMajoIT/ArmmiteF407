@@ -124,7 +124,8 @@ struct option_s {
     int DefaultFC, DefaultBC;      // 68  4  the default colours
     short  TOUCH_XZERO;            // 72  2
     short  TOUCH_YZERO; //80 bytes // 74  2
-                        // leaves 76,77,78,79  i.e 4 bytes
+         //Leaves 4 bytes ie. 76,77,78,79  i.e 4 bytes
+
 
 };
 
