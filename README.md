@@ -24,20 +24,20 @@ GND on PC13 will trigger a switch to the Serial Console.
 MM.INFO(BOOT) will return the reason for the last MMBasic Restart.  
 “Power On”, ”Reset Switch”, “MMBasic Reset”, ”CPU RESTART”, “Watchdog”, “EXECUTE Timout” or “HEAP Restart”.  
 These could be written to a log file to see the history of an unattended device.    
+LCDPANEL ILI9341_I removed.    
+OPTION LCDPANEL accepts [,INVERT] to invert colours on ILI9341 and ILI9488   
+In the commandline editor the automatic OVR mode on right arrow removed to lineup with the Picomites.  
+Comments are no longer tokenised as per Picomites.  
+MATH V_PRINT array() [,HEX]  outputs the contents in hex   
+LONGSTRING PRINT allows ; to suppress CRLF  
+CAN OPEN syntax adjusted slightly  
+Function INKEY$ changed so it automatically resolves Function and special keys  
+as per picomites and CMM2.  
+SHIFT F3-F8 Added as per picomite 6.00.02B0  
+//NB: SHIFT F1, F2, F9, F10, F11, and F12 don't appear to generate anything  
+AUTOSAVE APPEND  added.  
+MEMORY PACK/UNPACK removed to recover flash.   
 
-LCDPANEL ILI9341_I removed.  
-OPTION LCDPANEL accepts [,INVERT] to invert colours on ILI9341 and ILI9488
-In the commandline editor the automatic OVR mode on right arrow removed to lineup with the Picomites.
-Comments are no longer tokenised as per Picomites.
-MATH V_PRINT array() [,HEX]  outputs the contents in hex
-LONGSTRING PRINT allows ; to suppress CRLF
-CAN OPEN syntax adjusted slightly
-Function INKEY$ changed so it automatically resolves Function and special keys
-as per picomites and CMM2.
-SHIFT F3-F8 Added as per picomite 6.00.02B0
-//NB: SHIFT F1, F2, F9, F10, F11, and F12 don't appear to generate anything
-AUTOSAVE APPEND  added.
-MEMORY PACK/UNPACK removed to recover flash.
 V5.07.02b3:  
 Implements the new functions for parsing command parameters as used in the Picomite code.(i.e.MATH,LONGSTRING,ADC, commands). This has resulted in the freeing up of significant Flash, allowing some commands previously omitted to save space to be now included.
 
