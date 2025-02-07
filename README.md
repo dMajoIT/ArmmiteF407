@@ -15,21 +15,29 @@ Change list from V5.07.00
 
 
 V5.07.02b4:  
-An alternate ARMmiteF407PC13Reset.bin is provided to move the testing for an MMBasic Reset off PE4 (K1) and also the testing for Option Serial Console off PE3(K0).  
-Pin PC13 is now used to trigger these events. This allows PE4 and PE3 to be used without risking an unintended MMBasic Reset or switch to Serial Console.  
-LCDPANEL ILI9341_I removed.  
-OPTION LCDPANEL accepts [,INVERT] to invert colours on ILI9341 and ILI9488  
-In the commandline editor the automatic OVR mode on right arrow removed to lineup with the Picomites.  
-Comments are no longer tokenised as per Picomites.  
-MATH V_PRINT array() [,HEX]  outputs the contents in hex  
-LONGSTRING PRINT allows ; to suppress CRLF  
-MEMORY PRINT/INPUT added  
-CAN OPEN syntax adjusted slightly  
-Function Inkey$ changed so it automatically resolves Function and special keys  
-as per picomites and CMM2.  
-SHIFT F3-F8 Added as per picomite 6.00.02B0  
-//NB: SHIFT F1, F2, F9, F10, F11, and F12 don't appear to generate anything  
+An alternate firmware ARMmiteF407PC13Reset.bin is provided to move the testing for an MMBasic Reset off PE3 (K1)     
+and also the testing for Option Serial Console off PE4(K0). Pin PC13 is now used to trigger these events.   
+This allows PE4 and PE3 to be used without risking an unintended MMBasic Reset or switch to Serial Console.   
+3.3V on PC13 will trigger an MMBasic Reset  
+GND on PC13 will trigger a switch to the Serial Console.  
+!!! MMBasic Reset !!! Now printed on console after an MMBasic Reset is forced.  
+MM.INFO(BOOT) will return the reason for the last MMBasic Restart.  
+“Power On”, ”Reset Switch”, “MMBasic Reset”, ”CPU RESTART”, “Watchdog”, “EXECUTE Timout” or “HEAP Restart”.  
+These could be written to a log file to see the history of an unattended device.    
 
+LCDPANEL ILI9341_I removed.  
+OPTION LCDPANEL accepts [,INVERT] to invert colours on ILI9341 and ILI9488
+In the commandline editor the automatic OVR mode on right arrow removed to lineup with the Picomites.
+Comments are no longer tokenised as per Picomites.
+MATH V_PRINT array() [,HEX]  outputs the contents in hex
+LONGSTRING PRINT allows ; to suppress CRLF
+CAN OPEN syntax adjusted slightly
+Function INKEY$ changed so it automatically resolves Function and special keys
+as per picomites and CMM2.
+SHIFT F3-F8 Added as per picomite 6.00.02B0
+//NB: SHIFT F1, F2, F9, F10, F11, and F12 don't appear to generate anything
+AUTOSAVE APPEND  added.
+MEMORY PACK/UNPACK removed to recover flash.
 V5.07.02b3:  
 Implements the new functions for parsing command parameters as used in the Picomite code.(i.e.MATH,LONGSTRING,ADC, commands). This has resulted in the freeing up of significant Flash, allowing some commands previously omitted to save space to be now included.
 
