@@ -511,7 +511,7 @@ int main(void)
 //  ResetAllFlash();              // init the options if this is the very first startup
   LoadOptions();
   if(Option.Baudrate == 0 ||
-	!(Option.Tab==2 || Option.Tab==4 ||Option.Tab==8) ||
+	!(Option.Tab==2 || Option.Tab==3 || Option.Tab==4 ||Option.Tab==8) ||
 	!(Option.SerialConDisabled==0 || Option.SerialConDisabled==1)
   	  ){
 	  // ResetAllFlash();   // init the options if this is the very first startup
