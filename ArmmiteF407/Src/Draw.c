@@ -1617,37 +1617,41 @@ void cmd_line(void) {
     char *p;
     int x1, y1, x2, y2, w=0, c=0, n=0 ,i, nc=0, nw=0;
 
-        if((p=checkstring(cmdline,"PLOT"))){
-            long long int *y1ptr;
-            MMFLOAT *y1fptr;
-            int xs=0,xinc=1;
-            int ys=0,yinc=1;
-            getargs(&p, 13,",");
-            getargaddress(argv[0], &y1ptr, &y1fptr, &n);
-            if(n==1)error("Argument 1 is not an array");
-            nc=n;
-            if(argc>=3 && *argv[2])nc=getint(argv[2],1,HRes-1);
-            if(nc>n)nc=n;
-            if(argc>=5 && *argv[4])xs=getint(argv[4],0,HRes-1);
-            if(argc>=7 && *argv[6])xinc=getint(argv[6],1,HRes-1);
-            if(argc>=9 && *argv[8])ys=getint(argv[8],0,n-1);
-            if(argc>=11 && *argv[10])yinc=getint(argv[10],1,n-1);
-            c = gui_fcolour;  w = 1;                                        // setup the defaults
-            if(argc == 13) c = getint(argv[12], 0, WHITE);
-            for(i=0;i<nc-1;i+=xinc){
-                int y=ys+yinc*(i/xinc);
-                x1 = xs+i;
-                y1 = (y1fptr==NULL ? y1ptr[y] : (int)y1fptr[y]);
-                if(y1<0)y1=0;
-                if(y1>=VRes)y1=VRes-1;
-                x2 = xs+(i+xinc);
-                y2 = (y1fptr==NULL ? y1ptr[y+yinc] : (int)y1fptr[y+yinc]);
-                if(x1>=HRes)break; //can only get worse so stop now
-                if(x2>=HRes)x2=HRes-1;
-                if(y2<0)y2=0;
-                if(y2>=VRes)y2=VRes-1;
-                DrawLine(x1, y1, x2, y2, w, c);
-          }
+    if((p=checkstring(cmdline,"PLOT"))){
+                long long int *y1ptr;
+                MMFLOAT *y1fptr;
+                int xs=0,xinc=1;
+                int ys=0,yinc=1;
+                getargs(&p, 13,",");
+                getargaddress(argv[0], &y1ptr, &y1fptr, &n);
+                if(n==1)error("Argument 1 is not an array");
+                nc=n;
+                if(argc>=3 && *argv[2])nc=getint(argv[2],1,HRes-1);
+                if(nc>n)nc=n;
+                if(argc>=5 && *argv[4])xs=getint(argv[4],0,HRes-1);
+                if(argc>=7 && *argv[6])xinc=getint(argv[6],1,HRes-1);
+                if(argc>=9 && *argv[8])ys=getint(argv[8],0,n-1);
+                if(argc>=11 && *argv[10])yinc=getint(argv[10],1,n-1);
+                c = gui_fcolour;  w = 1;                                        // setup the defaults
+                if(argc == 13) c = getint(argv[12], 0, WHITE);
+               // for(i=0;i<nc-1;i+=xinc){
+               	for(i=0;i<nc-1;i++){
+                    //int y=ys+yinc*(i/xinc);
+                   // x1 = xs+i;
+                    int y=ys+(yinc*i);
+                    x1 = xs+i*xinc;
+                    y1 = (y1fptr==NULL ? y1ptr[y] : (int)y1fptr[y]);
+                    if(y1<0)y1=0;
+                    if(y1>=VRes)y1=VRes-1;
+                    //x2 = xs+(i+xinc);
+                    x2 = x1+xinc;
+                    y2 = (y1fptr==NULL ? y1ptr[y+yinc] : (int)y1fptr[y+yinc]);
+                    if(x1>=HRes)break; //can only get worse so stop now
+                    if(x2>=HRes)x2=HRes-1;
+                    if(y2<0)y2=0;
+                    if(y2>=VRes)y2=VRes-1;
+                    DrawLine(x1, y1, x2, y2, w, c);
+              }
 		} else if((p=checkstring(cmdline,"GRAPH"))){
             char *pp=GetTempMemory(STRINGSIZE);
             strcpy((char *)pp,(char *)p);
